@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pantry Keeper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header><img src="icons/icon-48.png" width="36" height="36" alt=""><div><h1>Pantry Keeper</h1><p>Meijer receipt scanner · v1.1.1</p></div></header>
+  <form id="settingsForm">
+    <label for="serverUrl">Pantry Keeper server</label>
+    <input id="serverUrl" type="text" inputmode="url" spellcheck="false" autocapitalize="none" placeholder="192.168.1.20:8000" required autocomplete="off">
+    <label for="apiToken">API token <span>(if configured)</span></label>
+    <input id="apiToken" type="password" placeholder="Your receipt API token" autocomplete="off">
+    <button id="saveBtn" type="submit" class="secondary">Save settings</button>
+  </form>
+  <p class="help">Open one Meijer receipt, then scan it. You’ll review the items in Pantry Keeper before importing.</p>
+  <button id="scanBtn" type="button">Scan this receipt</button>
+  <button id="reviewBtn" type="button" hidden>Review scanned receipt</button>
+  <button id="openBtn" type="button" class="secondary">Open Pantry Keeper</button>
+  <p id="status" role="status" aria-live="polite"></p>
+  <script src="core.js"></script>
+  <script src="product-lookup.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

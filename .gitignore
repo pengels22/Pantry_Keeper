@@ -1,0 +1,16 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+*.db
+.venv-next/
+.venv-python312-backup/
+safari-build*/
+dist/
+node_modules/
+.env.*
+!.env.example
+*.db-*
+*.sqlite
+*.sqlite3
+.DS_Store
