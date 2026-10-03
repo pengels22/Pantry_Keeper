@@ -132,8 +132,15 @@ scanBtn.addEventListener('click', async () => {
     }
     if (!data.parsed?.items?.length) throw new Error('No receipt items recognized. Open an individual receipt; you can also upload a screenshot in Pantry Keeper.');
     if (!data.draft_id) throw new Error('Update your Pantry Keeper server to support extension receipt drafts.');
-    const lookup = await lookupMeijerProducts(extension, data.lookup_items || data.parsed.items, message => status(message));
-    await serverRequest(address.origin, `/api/receipts/browser-drafts/${encodeURIComponent(data.draft_id)}/meijer-products`, token, lookup);
+
+    // Never fall back to every parsed line: the server must classify UPCs first.
+    if (!Array.isArray(data.lookup_items)) throw new Error('Update Pantry Keeper so it can check the database before Meijer lookup.');
+    const lookup = data.lookup_items.length
+      ? await lookupMeijerProducts(extension, data.lookup_items, message => status(message))
+      : {products: {}, errors: []};
+    if (data.lookup_items.length) {
+      await serverRequest(address.origin, `/api/receipts/browser-drafts/${encodeURIComponent(data.draft_id)}/meijer-products`, token, lookup);
+    }
 
     const reviewTab = await extension.tabs.create({
       url: `${address.origin}/#${new URLSearchParams({ draft: data.draft_id })}`, active: false,

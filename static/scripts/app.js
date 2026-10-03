@@ -21,6 +21,64 @@ async function api(url, options = {}) {
   return body;
 }
 
+function openExternalProductSearch(url) {
+  // Browser security prevents a web application from forcing Safari Private
+  // Browsing. This function is intentionally isolated so a future local macOS
+  // helper can open searches in a private window.
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+async function copySearchUrl(url) {
+  try {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(url);
+    } else {
+      const input = document.createElement('textarea');
+      input.value = url;
+      document.body.appendChild(input);
+      input.select();
+      const copied = document.execCommand('copy');
+      input.remove();
+      if (!copied) throw new Error('Copy unavailable');
+    }
+    setStatus('Search URL copied. Paste it into a Safari Private Browsing window.');
+  } catch {
+    window.prompt('Copy this URL into Safari Private Browsing:', url);
+  }
+}
+
+function addSearchControls(container, url) {
+  if (!url) return;
+  const controls = document.createElement('div');
+  controls.className = 'search-actions';
+  for (const [label, action] of [['Search Meijer', () => openExternalProductSearch(url)],
+                               ['Copy Search URL', () => copySearchUrl(url)]]) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary';
+    button.textContent = label;
+    button.addEventListener('click', action);
+    controls.appendChild(button);
+  }
+  container.appendChild(controls);
+}
+
+function productFieldsHtml(upc, suggestion = {}) {
+  return `<label>UPC<input data-field="upc" value="${escapeHtml(upc)}" readonly></label>` +
+    [['name', 'Product Name'], ['brand', 'Brand'], ['size', 'Size'], ['category', 'Category'],
+     ['unit', 'Default Unit'], ['notes', 'Notes'], ['default_location', 'Default Location']]
+      .map(([field, label]) => `<label>${label}<input data-field="${field}" data-match-${field}
+        value="${escapeHtml(suggestion[field] || '')}" aria-label="${label}"></label>`).join('');
+}
+
+function readProductFields(container) {
+  const payload = {};
+  for (const input of container.querySelectorAll('[data-field]')) {
+    payload[input.dataset.field] = input.value.trim() || null;
+  }
+  return payload;
+}
+
 async function loadDashboard() {
   const data = await api("/api/dashboard");
   $("#productCount").textContent = data.products.length;
@@ -33,7 +91,7 @@ async function loadDashboard() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(p.name)}</td>
-      <td>${escapeHtml(p.receipt_code_raw)}</td>
+      <td>${escapeHtml(p.upc || p.receipt_code_raw)}</td>
       <td><input data-quantity type="number" min="0" step="any" value="${p.inventory_quantity ?? 0}" aria-label="Quantity"><button data-save>Save</button></td>
       <td>${escapeHtml(p.inventory_location || "")}</td>
     `;
@@ -115,11 +173,12 @@ async function showReview(scan) {
       <td>${item.quantity ?? 1}</td>
       <td>${money(item.line_total)}</td>
       <td>
-        <span class="badge ${status}">${escapeHtml(status)}</span>
+        <span class="badge ${status}">${status === 'resolved' ? 'Known · Pantry Keeper' : status === 'suggested' ? 'Suggested · External Lookup' : 'Unknown · Needs Identification'}</span>
         <div>${escapeHtml(label)}</div>
-        <a href="${item.meijer_search_url}" target="_blank" rel="noopener">Search Meijer</a>
+
       </td>
     `;
+    if (status !== 'resolved') addSearchControls(tr.lastElementChild, item.meijer_search_url);
     if (status === 'suggested') {
       const candidates = item.candidates || [item.suggestion];
       const cell = tr.lastElementChild;
@@ -128,10 +187,10 @@ async function showReview(scan) {
       select.setAttribute('aria-label', `Product match for ${item.receipt_description}`);
       select.innerHTML = '<option value="">Leave unidentified</option>' + candidates.map((candidate, index) =>
         `<option value="${index}">${escapeHtml(candidate.name)}${candidate.size ? ' — ' + escapeHtml(candidate.size) : ''}</option>`).join('');
-      select.value = candidates[0].match_kind === 'exact_code' ? '0' : '';
+      select.value = '0';
       const form = document.createElement('div');
       form.className = 'match-fields';
-      form.innerHTML = '<input data-match-name aria-label="Product name" placeholder="Product name"><input data-match-brand aria-label="Brand" placeholder="Brand"><input data-match-size aria-label="Size" placeholder="Size">';
+      form.innerHTML = productFieldsHtml(item.upc || item.normalized_code || item.raw_code);
       const note = document.createElement('small');
       const productLink = document.createElement('a');
       productLink.textContent = 'View Meijer product';
@@ -142,7 +201,10 @@ async function showReview(scan) {
         form.querySelector('[data-match-name]').value = candidate?.name || '';
         form.querySelector('[data-match-brand]').value = candidate?.brand || '';
         form.querySelector('[data-match-size]').value = candidate?.size || '';
-        note.textContent = candidate ? (candidate.match_kind === 'exact_code' ? 'Receipt code matches Meijer. Saved when you import.' : 'Check this product before importing.') : 'Choose a product to identify this receipt code.';
+        for (const field of ['category', 'unit', 'notes', 'default_location']) {
+          form.querySelector(`[data-field="${field}"]`).value = candidate?.[field] || '';
+        }
+        note.textContent = candidate ? (candidate.match_kind === 'exact_code' ? 'Receipt code matches Meijer. Saved when you import.' : 'Suggested match. Check it before importing; saved unless you choose Leave unidentified.') : 'Choose a product to identify this receipt code.';
         productLink.hidden = !candidate?.url;
         if (candidate?.url) productLink.href = candidate.url;
         select.matchCandidate = candidate;
@@ -153,6 +215,44 @@ async function showReview(scan) {
       cell.appendChild(note);
       cell.appendChild(productLink);
       update();
+    } else if (status === 'unresolved') {
+      const cell = tr.lastElementChild;
+      const editor = document.createElement('details');
+      editor.innerHTML = `<summary>Enter Product Manually</summary><div class="match-fields" data-manual-upc="${escapeHtml(item.upc || item.raw_code)}">
+        ${productFieldsHtml(item.upc || item.raw_code)}
+        <button type="button" data-save-product>Save Product</button></div>`;
+      editor.querySelector('[data-save-product]').addEventListener('click', async () => {
+        const form = editor.querySelector('[data-manual-upc]');
+        try {
+          const product = await api('/api/products', {method: 'POST',
+            headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...readProductFields(form), lookup_source: form.dataset.lookupSource || 'manual'})});
+          cell.innerHTML = `<span class="badge resolved">Known · Pantry Keeper</span><div>${escapeHtml(product.name)}</div>`;
+          await Promise.all([loadDashboard(), loadUnknown()]);
+          setStatus('Product saved. Import the receipt to add this purchase to inventory.');
+        } catch (err) { setStatus(err.message, true); }
+      });
+      cell.appendChild(editor);
+      if (['RATE_LIMITED', 'DEFERRED', 'ERROR'].includes(item.lookup_status)) {
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'secondary';
+        retry.textContent = 'Try public UPC lookup';
+        retry.addEventListener('click', async () => {
+          try {
+            const result = await api(`/api/products/lookup?upc=${encodeURIComponent(item.upc || item.raw_code)}`);
+            const form = editor.querySelector('[data-manual-upc]');
+            if (result.suggestion) {
+              for (const input of form.querySelectorAll('[data-field]')) {
+                if (input.dataset.field !== 'upc' && result.suggestion[input.dataset.field]) input.value = result.suggestion[input.dataset.field];
+              }
+              editor.open = true;
+              form.dataset.lookupSource = result.suggestion.lookup_source;
+              setStatus('Public lookup suggestion loaded. Review and save the product.');
+            } else setStatus(result.product ? `Known product: ${result.product.name}` : 'No suggestion available yet. You can enter this product manually.');
+          } catch (err) { setStatus(err.message, true); }
+        });
+        cell.appendChild(retry);
+      }
     }
     tbody.appendChild(tr);
   }
@@ -164,19 +264,19 @@ async function importCurrentReceipt() {
   if (!currentScan) return;
   try {
     $('#importReceiptBtn').disabled = true;
+    const selectedProducts = {};
     for (const select of document.querySelectorAll('[data-product-match]')) {
       if (select.value === '') continue;
       const form = select.parentElement.querySelector('.match-fields');
       const candidate = select.matchCandidate;
       const name = form.querySelector('[data-match-name]').value.trim();
       if (!name) throw new Error('A selected product needs a name.');
-      await api('/api/products', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({receipt_code_raw: select.dataset.productMatch, name,
-          brand: form.querySelector('[data-match-brand]').value.trim() || null,
-          size: form.querySelector('[data-match-size]').value.trim() || null,
-          category: candidate.category || null, lookup_source: candidate.lookup_source || 'manual'}),
-      });
+      selectedProducts[select.dataset.productMatch] = {...readProductFields(form),
+        lookup_source: candidate.lookup_source || 'manual'};
+    }
+    for (const form of document.querySelectorAll('[data-manual-upc]')) {
+      const payload = readProductFields(form);
+      if (payload.name) selectedProducts[form.dataset.manualUpc] = {...payload, lookup_source: form.dataset.lookupSource || 'manual'};
     }
     const result = await api("/api/receipts/import", {
       method: "POST",
@@ -187,6 +287,7 @@ async function importCurrentReceipt() {
         raw_text: currentScan.raw_text,
         ocr_text: currentScan.ocr_text,
         parsed: currentScan.parsed,
+        selected_products: selectedProducts,
       }),
     });
     setStatus(`Receipt #${result.receipt_id}: imported ${result.imported_items} receipt line(s). ${result.resolved_items} identified line(s) added to inventory; ${result.unresolved_items} line(s) are saved under Unknown Products.`);
@@ -204,56 +305,56 @@ async function loadUnknown() {
   const rows = await api("/api/unknown-products");
   const container = $("#unknownProducts");
   container.innerHTML = "";
-
   if (!rows.length) {
-    container.innerHTML = `<p>No unknown products.</p>`;
+    container.innerHTML = '<p>No unknown products.</p>';
     return;
   }
-
   for (const row of rows) {
-    const card = document.createElement("article");
-    card.className = "unknown-card";
-    card.innerHTML = `
-      <div class="unknown-header">
-        <div>
-          <strong>${escapeHtml(row.raw_code || "")}</strong>
-          <div>${escapeHtml(row.description || "")}</div>
-        </div>
-        <a class="button secondary" href="${row.meijer_search_url}" target="_blank" rel="noopener">Search Meijer</a>
-      </div>
-      <div class="form-grid">
-        <input data-field="name" placeholder="Product name">
-        <input data-field="brand" placeholder="Brand">
-        <input data-field="size" placeholder="Size (e.g. 12 oz)">
-        <input data-field="category" placeholder="Category">
-        <input data-field="default_location" placeholder="Default location">
-      </div>
-      <div class="form-actions">
-        <button data-action="save">Save Product</button>
-      </div>
-    `;
-    card.querySelector('[data-action="save"]').addEventListener("click", async () => {
-      const payload = {};
-      for (const input of card.querySelectorAll("[data-field]")) {
-        payload[input.dataset.field] = input.value.trim() || null;
-      }
-      if (!payload.name) {
-        alert("Enter a product name.");
-        return;
-      }
+    const card = document.createElement('article');
+    card.className = 'unknown-card';
+    card.innerHTML = `<div class="unknown-header"><div><strong>Unknown Product · UPC: ${escapeHtml(row.upc || row.raw_code)}</strong>
+      <div>${escapeHtml(row.description || '')}</div><span class="badge unresolved">Needs Identification</span></div></div>
+      <details open><summary>Enter Product Manually</summary><div class="form-grid">${productFieldsHtml(row.upc || row.raw_code, row.suggestion || {})}</div></details>
+      <div class="form-actions"><button data-action="save">Save Product</button></div>`;
+    addSearchControls(card.querySelector('.unknown-header'), row.meijer_search_url);
+    card.querySelector('[data-action="save"]').addEventListener('click', async () => {
       try {
+        const payload = readProductFields(card);
+        payload.lookup_source = row.suggestion?.lookup_source || 'manual';
         await api(`/api/unknown-products/${row.receipt_item_id}/resolve`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+          method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
         await Promise.all([loadDashboard(), loadUnknown()]);
-      } catch (err) {
-        alert(err.message);
-      }
+        setStatus('Product saved. All pending purchases of this UPC are now in inventory.');
+      } catch (err) { setStatus(err.message, true); }
     });
     container.appendChild(card);
   }
+}
+
+async function lookupManualUpc(event) {
+  event.preventDefault();
+  try {
+    const result = await api(`/api/products/lookup?upc=${encodeURIComponent($('#manualUpc').value)}`);
+    const container = $('#manualProductResult');
+    container.innerHTML = '';
+    if (result.product) {
+      container.innerHTML = `<span class="badge resolved">Known · Pantry Keeper</span><p>${escapeHtml(result.product.name)}</p>`;
+      return;
+    }
+    container.innerHTML = `<span class="badge ${result.suggestion ? 'suggested' : 'unresolved'}">${result.suggestion ? 'Suggested · External Lookup' : 'Unknown · Needs Identification'}</span>
+      <div class="form-grid">${productFieldsHtml(result.upc, result.suggestion || {})}</div>
+      <div class="form-actions"><button type="button" data-save-product>Save Product</button></div>`;
+    addSearchControls(container, result.meijer_search_url);
+    container.querySelector('[data-save-product]').addEventListener('click', async () => {
+      try {
+        const payload = {...readProductFields(container), lookup_source: result.suggestion?.lookup_source || 'manual'};
+        const product = await api('/api/products', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+        container.innerHTML = `<span class="badge resolved">Known · Pantry Keeper</span><p>${escapeHtml(product.name)}</p>`;
+        await Promise.all([loadDashboard(), loadUnknown()]);
+        setStatus('Product saved to Pantry Keeper.');
+      } catch (err) { setStatus(err.message, true); }
+    });
+  } catch (err) { setStatus(err.message, true); }
 }
 
 function escapeHtml(value) {
@@ -264,6 +365,8 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+$('#manualUpcForm').addEventListener('submit', lookupManualUpc);
 
 $("#uploadInput").addEventListener("change", (e) => handleImage(e.target.files[0], "upload"));
 $("#cameraInput").addEventListener("change", (e) => handleImage(e.target.files[0], "camera"));

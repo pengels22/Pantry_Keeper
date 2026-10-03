@@ -54,22 +54,30 @@ npm test
 
 The automated extension tests mock browser APIs. Actual Safari, signing, and real Meijer page behavior still require testing on an Apple device.
 
-## Update to version 1.1.1
+## Update to version 1.2.1
 
-Download and extract the new source bundle. For a temporary Safari installation, remove the previous extension and add the new `browser_extension` folder, or replace the installed folder’s files and choose Reload in Safari’s extension settings. Packaged Xcode installations need new copied resources and a new build/run. Restart the Pantry Keeper server to enable the new PDF and image receipt endpoints.
+Download `dist/Pantry-Keeper-Safari-v1.2.1-source.zip` and rebuild/reload the
+extension on your Mac. For packaged Xcode installations, copy the new resources
+by rerunning the packaging script into a fresh directory and build/run again.
 
-This version fixes the narrow popup, accepts bare IP addresses, and scans image-only and PDF receipt pages. PDF files are downloaded directly rather than reading Safari’s PDF viewer. The server extracts embedded text first and uses OCR for scanned pages; uploads are limited to 20 MB and 10 pages. Allow Meijer website access when the scanner requests it.
+Version 1.2.1 automatically searches Meijer for unique UPCs missing from Pantry
+Keeper's database. The server checks all codes locally first and sends only
+unknown codes to the scanner. Known products trigger no Meijer or public-service
+lookup. An empty unknown list opens no product search tabs.
 
-Version 1.0.3 opens review in the background, reports scanned and expected item counts, and preserves your receipt tab. The server parser handles joined and wrapped item lines and tries additional PDF layouts or OCR when extraction appears incomplete. Pantry Keeper’s Scan From Browser link opens https://www.meijer.com/shopping/orders. Import confirmation reports every saved receipt line, including unidentified products.
+The scanner searches sequentially in a temporary tab, preferring receipt-code
+matches and trying descriptions if needed. Selected suggestions are saved with
+the receipt; future purchases reuse the catalog. Allow Meijer website access and
+keep the popup open during lookup. Store/sign-in trouble is reported and stops
+further searches.
 
-## Automatic Meijer product lookup
+Unknown items have manual **Search Meijer**, **Copy Search URL**, and
+**Enter Product Manually** controls. To search privately, copy the URL and paste
+it into a Safari Private Browsing window. The web app cannot force Safari to
+create a private window. Save Product remembers a UPC for all future receipts.
 
-Version 1.1.0 searches each unfamiliar receipt code on Meijer in a temporary background Safari tab. It reads product links and structured product details, then tries the receipt description if there is no exact code match. It does not send your Meijer credentials or cookies to Pantry Keeper. Keep the extension popup open until it finishes; closing it interrupts lookup. Progress is shown for each code.
-
-Select a Meijer store and sign in if needed before scanning. If Meijer asks for attention, the search tab stays open so you can address it. Otherwise only that temporary search tab is closed; your receipt remains open.
-
-Exact receipt-code matches are preselected in Review Receipt. Other search results require choosing a product. You can edit the name, brand, and size and open the Meijer product page before importing. Import saves selected matches in your catalog, then adds identified items to inventory. Future scans reuse saved matches without searching again. Unmatched items remain in Unknown Products; Open Food Facts remains the fallback when no Meijer candidate was collected.
-
-Safari product-page scraping is tested with representative HTML and mocked browser APIs. This Linux workspace cannot verify your current signed-in Safari session; Meijer page layout and store permissions may require refinement.
-
-Version 1.1.1 accepts Meijer search query redirects and checks the page document rather than waiting for Safari’s tab status to become complete. Store/sign-in and website-permission failures are reported separately.
+The server's unknown-only list also works with v1.1.x scanners. If you installed
+v1.2.0 (which removed lookup), rebuild/reload v1.2.1 to restore automatic search.
+Restart the server and refresh the web app after updating. See
+[database-first workflow](../docs/database-first-lookup.md) for schema changes,
+API details, caching, rate limits, and commands.

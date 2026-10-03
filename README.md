@@ -14,8 +14,8 @@ Pantry Keeper is a small FastAPI web app for building a grocery/product database
 - Manual unknown-product resolver
 - Inventory quantities
 - Duplicate-receipt fingerprinting
-- PostgreSQL via Docker Compose
-- SQLite fallback for direct local runs
+- Local SQLite database
+- Optional PostgreSQL connection through DATABASE_URL
 
 ## Directory layout
 
@@ -25,8 +25,6 @@ Pantry_Keeper/
 ├── db.py
 ├── models.py
 ├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
 ├── templates/
 │   └── index.html
 ├── static/
@@ -38,7 +36,11 @@ Pantry_Keeper/
 │   ├── inventory_service.py
 │   ├── meijer_parser.py
 │   ├── ocr.py
-│   └── product_lookup.py
+│   ├── product_lookup.py
+│   ├── product_catalog.py
+│   ├── schema.py
+│   ├── upc.py
+│   └── pdf.py
 └── browser_extension/
     ├── manifest.json
     ├── content.js
@@ -46,25 +48,7 @@ Pantry_Keeper/
     └── popup.js
 ```
 
-## Optional Docker setup
-
-1. Edit `docker-compose.yml` and change:
-   - `POSTGRES_PASSWORD`
-   - `RECEIPT_API_TOKEN`
-
-2. Start the app:
-
-```bash
-docker compose up -d --build
-```
-
-3. Open:
-
-```text
-http://YOUR_SERVER_IP:8000
-```
-
-## Quick start without Docker
+## Quick start
 
 Install Tesseract:
 
@@ -86,7 +70,7 @@ cp .env.example .env
 
 The startup script binds to all network interfaces (`0.0.0.0`) on port 8000. Open `http://YOUR_SERVER_IP:8000` from another device. Override the address or port with `PANTRY_HOST` or `PANTRY_PORT` when needed.
 
-This defaults to SQLite. Use Python 3.14.8, the latest stable release verified for this app. Docker is optional.
+This defaults to SQLite. The app is configured for Python 3.14.8 and runs directly with `./run.sh`.
 
 ## Safari extension
 
@@ -100,7 +84,7 @@ See [extension setup and troubleshooting](browser_extension/README.md) for packa
 
 - The Meijer parser is intentionally isolated in `services/meijer_parser.py` so it can be refined against additional real receipts.
 - Open Food Facts is used as an automatic public lookup fallback.
-- The Safari extension automatically searches Meijer for unfamiliar receipt codes and brings product suggestions into review. Exact code matches are preselected; description matches require selection. Selected products are saved when importing. A **Search Meijer** link remains available for manual identification.
+- All UPC lookup checks Pantry Keeper first. Known products use the saved catalog without external traffic. Unknown UPCs can use a cached Open Food Facts suggestion or manual entry. The Safari extension automatically searches Meijer only for unique UPCs the database does not know yet. **Search Meijer** and **Copy Search URL** remain available for manual searches. Selected suggestions are saved together with the receipt when importing.
 - The first time an unknown code is manually resolved, that code is permanently remembered in the local product catalog.
 
 ## Inventory adjustments
@@ -115,3 +99,14 @@ python -m pip check
 ```
 
 Tests use a temporary SQLite database.
+
+## Database-first identification
+
+See [lookup, migration, API, and restart details](docs/database-first-lookup.md).
+Startup adds a unique text UPC, notes, and lookup cache without clearing existing
+records. Find or Add Product accepts typed UPCs and hardware barcode-reader input.
+Save Product identifies every pending receipt line for that UPC and remembers it
+for later purchases. Copy Search URL supports pasting into Safari Private Browsing.
+
+Extension v1.2.1 automatically searches Meijer only for unknown UPCs; known products are resolved locally.
+No additional dependencies are needed.

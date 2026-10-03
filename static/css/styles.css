@@ -303,3 +303,10 @@ dialog {
 
 .match-fields { display: grid; gap: .4rem; margin: .5rem 0; }
 .match-fields input, td select { width: 100%; min-width: 180px; padding: .5rem; border: 1px solid var(--border); border-radius: 6px; font: inherit; background: var(--panel); color: var(--text); }
+
+.search-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; }
+.search-actions button { padding: .4rem .6rem; font-size: .85rem; }
+.form-grid label, .match-fields label { display: grid; gap: .25rem; font-size: .9rem; }
+summary { cursor: pointer; margin: .5rem 0; }
+#manualUpc { padding: .6rem; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+#manualProductResult { margin-top: .75rem; }

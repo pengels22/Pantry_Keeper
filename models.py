@@ -22,6 +22,8 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    upc: Mapped[str] = mapped_column(Text, unique=True, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     receipt_code_raw: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     gtin_normalized: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     brand: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -104,3 +106,25 @@ class BrowserDraft(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     scan_json: Mapped[str] = mapped_column(Text)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class ProductLookupCache(Base):
+    __tablename__ = "product_lookup_cache"
+    __table_args__ = (UniqueConstraint("upc", "source", name="uq_lookup_upc_source"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    upc: Mapped[str] = mapped_column(Text, index=True)
+    source: Mapped[str] = mapped_column(String(64))
+    product_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    brand: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    raw_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lookup_timestamp: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(16))
+
+
+class ProductLookupRateLimit(Base):
+    __tablename__ = "product_lookup_rate_limits"
+
+    source: Mapped[str] = mapped_column(String(64), primary_key=True)
+    next_lookup_at: Mapped[datetime] = mapped_column(DateTime)

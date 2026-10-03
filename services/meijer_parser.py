@@ -1,3 +1,5 @@
+from services.upc import normalize_upc
+
 import hashlib
 import re
 from dataclasses import dataclass, asdict
@@ -42,10 +44,8 @@ class ParsedItem:
 
 
 def normalize_code(code: str) -> str:
-    digits = re.sub(r"\D", "", code or "")
-    if len(digits) == 11:
-        return "0" + digits
-    return digits
+    # Compatibility name used by existing receipt parsing and imports.
+    return normalize_upc(code)
 
 
 def _search(pattern, text, key):

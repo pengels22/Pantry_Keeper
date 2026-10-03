@@ -16,13 +16,19 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from db import Base, engine, get_db
+from db import engine, get_db
 from models import BrowserDraft, Inventory, Product, Receipt, ReceiptItem, utc_now
 from services.inventory_service import add_to_inventory
-from services.meijer_parser import normalize_code, parse_meijer_receipt
+from services.meijer_parser import parse_meijer_receipt
 from services.ocr import OCRUnavailable, extract_text_from_image
 from services.pdf import extract_receipt_pdf, InvalidReceiptPDF, ReceiptPDFTooLarge
-from services.product_lookup import find_local_product, lookup_open_food_facts, meijer_search_url
+from services.product_lookup import (
+    find_local_product, find_local_products, lookup_open_food_facts,
+    lookup_unknown_product, cached_suggestion, meijer_search_url,
+)
+from services.product_catalog import product_values, save_identified_product, resolve_pending_items
+from services.schema import initialize_database
+from services.upc import normalize_upc
 
 BASE_DIR = Path(__file__).resolve().parent
 APP_NAME = os.getenv("APP_NAME", "Pantry Keeper")
@@ -32,7 +38,7 @@ app = FastAPI(title=APP_NAME)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
-Base.metadata.create_all(bind=engine)
+initialize_database(engine)
 
 
 def require_extension_token(authorization: str | None):
@@ -43,39 +49,64 @@ def require_extension_token(authorization: str | None):
         raise HTTPException(status_code=401, detail="Invalid API token.")
 
 
-async def resolve_item(db: Session, item: dict, meijer_products: dict | None = None):
-    local = find_local_product(db, item["raw_code"], item["normalized_code"])
-    if local:
-        return {
-            "status": "resolved",
-            "product": serialize_product(local),
-            "meijer_search_url": meijer_search_url(item["raw_code"]),
-        }
+def normalized_items(parsed):
+    items = []
+    for item in parsed.get("items", []):
+        try:
+            upc = normalize_upc(item.get("raw_code") or item.get("upc") or item.get("normalized_code"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        try:
+            quantity = float(item.get("quantity", 1.0))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Receipt quantity must be numeric.")
+        if not math.isfinite(quantity) or quantity < 0:
+            raise HTTPException(status_code=400, detail="Receipt quantity must be finite and nonnegative.")
+        items.append({**item, "raw_code": item.get("raw_code") or upc, "upc": upc, "normalized_code": upc, "quantity": quantity})
+    return items
 
-    candidates = (meijer_products or {}).get(item["raw_code"], [])
-    if candidates:
-        return {
-            "status": "suggested", "suggestion": candidates[0], "candidates": candidates,
-            "meijer_search_url": meijer_search_url(item["raw_code"]),
-        }
 
-    off = await lookup_open_food_facts(item["normalized_code"] or item["raw_code"])
-    if off:
-        return {
-            "status": "suggested",
-            "suggestion": off,
-            "meijer_search_url": meijer_search_url(item["raw_code"]),
-        }
-
-    return {
-        "status": "unresolved",
-        "meijer_search_url": meijer_search_url(item["raw_code"]),
-    }
+async def resolve_items(db, items, meijer_products=None):
+    # Finish the full local comparison before any external service is eligible.
+    known = find_local_products(db, [item["upc"] for item in items])
+    resolutions = {}
+    attempts = 0
+    for item in items:
+        upc = item["upc"]
+        if upc in resolutions:
+            continue
+        if upc in known:
+            resolutions[upc] = {"status": "resolved", "source": "Pantry Keeper",
+                "lookup_status": "KNOWN", "product": serialize_product(known[upc])}
+            continue
+        search = {"meijer_search_url": meijer_search_url(upc), "classification": "UNKNOWN_UPC"}
+        candidates = (meijer_products or {}).get(item["upc"], []) or (meijer_products or {}).get(item.get("raw_code"), [])
+        if candidates:
+            resolutions[upc] = {**search, "status": "suggested", "source": "External Lookup",
+                "suggestion": candidates[0], "candidates": candidates}
+            continue
+        if attempts >= 5:
+            suggestion = cached_suggestion(db, upc)
+            result = {"suggestion": suggestion, "lookup_status": "DEFERRED"}
+        else:
+            result = await lookup_unknown_product(db, upc, fetcher=lookup_open_food_facts)
+            if not result.get("cached"):
+                attempts += 1
+        if result.get("product"):
+            resolutions[upc] = {"status": "resolved", "source": "Pantry Keeper",
+                "lookup_status": "KNOWN", "product": serialize_product(result["product"])}
+        else:
+            resolutions[upc] = {**search, **result,
+                "source": "External Lookup" if result.get("suggestion") else "Needs Identification",
+                "status": "suggested" if result.get("suggestion") else "unresolved"}
+    return [{**item, **resolutions[item["upc"]]} for item in items]
 
 
 def serialize_product(p: Product):
     return {
         "id": p.id,
+        "upc": p.upc,
+        "notes": p.notes,
         "receipt_code_raw": p.receipt_code_raw,
         "gtin_normalized": p.gtin_normalized,
         "brand": p.brand,
@@ -181,10 +212,16 @@ def save_browser_draft(db: Session, scan: dict):
     db.add(BrowserDraft(id=draft_id, scan_json=json.dumps(scan),
                         expires_at=utc_now() + timedelta(minutes=30)))
     db.commit()
-    return {**scan, "draft_id": draft_id, "lookup_items": [
-        item for item in scan["parsed"]["items"]
-        if not find_local_product(db, item["raw_code"], item["normalized_code"])
-    ]}
+    items = normalized_items(scan["parsed"])
+    known = find_local_products(db, [item["upc"] for item in items])
+    return {**scan, "draft_id": draft_id,
+        "known_items": [item for item in items if item["upc"] in known],
+        "unknown_items": [item for item in items if item["upc"] not in known],
+        # Only unique UPCs missing from our catalog are eligible for Meijer.
+        "lookup_items": list({item["upc"]: {**item, "raw_code": item["upc"],
+            "meijer_search_url": meijer_search_url(item["upc"])}
+            for item in items if item["upc"] not in known and item["upc"]}.values()),
+    }
 
 
 @app.post("/api/receipts/browser-image")
@@ -263,12 +300,13 @@ def attach_meijer_products(
     if not draft or draft.expires_at <= utc_now():
         raise HTTPException(status_code=410, detail="Receipt draft expired. Scan it again.")
     scan = json.loads(draft.scan_json)
-    codes = {item["raw_code"] for item in scan["parsed"]["items"]}
+    codes = {normalize_upc(item["raw_code"]) for item in scan["parsed"]["items"]}
     products = payload.get("products")
     if not isinstance(products, dict):
         raise HTTPException(status_code=400, detail="Product lookup results must be a mapping.")
     cleaned = {}
     for code, candidates in products.items():
+        code = normalize_upc(code)
         if code not in codes or not isinstance(candidates, list):
             raise HTTPException(status_code=400, detail="Product results must belong to this receipt.")
         cleaned[code] = []
@@ -305,48 +343,24 @@ def attach_meijer_products(
 @app.post("/api/receipts/resolve-preview")
 async def resolve_preview(payload: dict, db: Session = Depends(get_db)):
     parsed = payload.get("parsed") or {}
-    results = []
-    for item in parsed.get("items", []):
-        resolved = await resolve_item(db, item, payload.get("meijer_products"))
-        results.append({**item, **resolved})
-    return {"items": results}
+    return {"items": await resolve_items(db, normalized_items(parsed), payload.get("meijer_products"))}
+
+
+@app.get("/api/products/lookup")
+async def lookup_product(upc: str, db: Session = Depends(get_db)):
+    normalized = normalize_upc(upc)
+    if not normalized or len(normalized) > 64:
+        raise HTTPException(status_code=400, detail="Enter a UPC of 1–64 digits.")
+    return (await resolve_items(db, [{"raw_code": upc, "upc": normalized,
+                                    "normalized_code": normalized}]))[0]
 
 
 @app.post("/api/products")
 def create_product(payload: dict, db: Session = Depends(get_db)):
-    raw_code = (payload.get("receipt_code_raw") or "").strip()
-    name = (payload.get("name") or "").strip()
-    if not raw_code or not name:
-        raise HTTPException(status_code=400, detail="receipt_code_raw and name are required.")
-
-    existing = find_local_product(db, raw_code, normalize_code(raw_code))
-    if existing:
-        existing.brand = payload.get("brand")
-        existing.name = name
-        existing.size = payload.get("size")
-        existing.unit = payload.get("unit")
-        existing.category = payload.get("category")
-        existing.default_location = payload.get("default_location")
-        existing.lookup_source = payload.get("lookup_source", "manual")
-        db.commit()
-        db.refresh(existing)
-        return serialize_product(existing)
-
-    p = Product(
-        receipt_code_raw=raw_code,
-        gtin_normalized=normalize_code(raw_code),
-        brand=payload.get("brand"),
-        name=name,
-        size=payload.get("size"),
-        unit=payload.get("unit"),
-        category=payload.get("category"),
-        default_location=payload.get("default_location"),
-        lookup_source=payload.get("lookup_source", "manual"),
-    )
-    db.add(p)
+    product = save_identified_product(db, payload.get("upc") or payload.get("receipt_code_raw"), payload)
+    resolve_pending_items(db, product)
     db.commit()
-    db.refresh(p)
-    return serialize_product(p)
+    return serialize_product(product)
 
 
 @app.post("/api/receipts/import")
@@ -359,6 +373,25 @@ def import_receipt(payload: dict, db: Session = Depends(get_db)):
     existing = db.query(Receipt).filter(Receipt.fingerprint == fingerprint).first()
     if existing:
         raise HTTPException(status_code=409, detail=f"Receipt already imported as #{existing.id}.")
+
+    items = normalized_items(parsed)
+    known = find_local_products(db, [item["upc"] for item in items])
+    selected_products = payload.get("selected_products", {})
+    codes = {item["upc"] for item in items}
+    if not isinstance(selected_products, dict):
+        raise HTTPException(status_code=400, detail="Selected products must be a mapping.")
+    selected_normalized = {}
+    for code, selected in selected_products.items():
+        upc = normalize_upc(code)
+        if upc not in codes or not isinstance(selected, dict):
+            raise HTTPException(status_code=400, detail="Selected products must belong to this receipt.")
+        product_values(selected)
+        selected_normalized[upc] = selected
+    for upc, selected in selected_normalized.items():
+        # Local catalog wins even if a stale browser review sends suggestions.
+        if upc not in known:
+            known[upc] = save_identified_product(db, upc, selected)
+        resolve_pending_items(db, known[upc])
 
     receipt = Receipt(
         store="Meijer",
@@ -379,8 +412,8 @@ def import_receipt(payload: dict, db: Session = Depends(get_db)):
     db.flush()
 
     unresolved = 0
-    for item in parsed.get("items", []):
-        product = find_local_product(db, item.get("raw_code", ""), item.get("normalized_code"))
+    for item in items:
+        product = known.get(item["upc"])
         status = "resolved" if product else "unresolved"
         if not product:
             unresolved += 1
@@ -423,6 +456,9 @@ def unknown_products(db: Session = Depends(get_db)):
             "receipt_item_id": r.id,
             "raw_code": r.raw_code,
             "normalized_code": r.normalized_code,
+            "upc": normalize_upc(r.raw_code or r.normalized_code),
+            "classification": "UNKNOWN_UPC",
+            "suggestion": cached_suggestion(db, r.raw_code or r.normalized_code or ""),
             "description": r.receipt_description,
             "quantity": r.quantity,
             "line_total": r.line_total,
@@ -441,34 +477,11 @@ def resolve_unknown(receipt_item_id: int, payload: dict, db: Session = Depends(g
     if row.status == "resolved":
         return {"ok": True, "product": serialize_product(row.product)}
 
-    product = find_local_product(db, row.raw_code or "", row.normalized_code)
+    code = row.raw_code or row.normalized_code or ""
+    product = find_local_product(db, code)
     if not product:
-        name = (payload.get("name") or "").strip()
-        if not name:
-            raise HTTPException(status_code=400, detail="Product name is required.")
-
-        product = Product(
-            receipt_code_raw=row.raw_code or row.normalized_code or "",
-            gtin_normalized=row.normalized_code,
-            brand=payload.get("brand"),
-            name=name,
-            size=payload.get("size"),
-            unit=payload.get("unit"),
-            category=payload.get("category"),
-            default_location=payload.get("default_location"),
-            lookup_source=payload.get("lookup_source", "manual"),
-        )
-        db.add(product)
-        db.flush()
-
-    claimed = db.query(ReceiptItem).filter(
-        ReceiptItem.id == row.id, ReceiptItem.status == "unresolved"
-    ).update({"product_id": product.id, "status": "resolved"}, synchronize_session=False)
-    if not claimed:
-        db.rollback()
-        db.refresh(row)
-        return {"ok": True, "product": serialize_product(row.product)}
-    add_to_inventory(db, product, row.quantity)
+        product = save_identified_product(db, code, payload)
+    resolve_pending_items(db, product)
     db.commit()
     return {"ok": True, "product": serialize_product(product)}
 

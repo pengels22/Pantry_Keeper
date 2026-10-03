@@ -93,6 +93,15 @@
     </section>
 
     <section class="panel">
+      <div class="panel-heading"><div><h2>Find or Add Product</h2><p>Enter a UPC or scan it with a barcode reader.</p></div></div>
+      <form id="manualUpcForm" class="form-actions">
+        <label>UPC <input id="manualUpc" type="text" inputmode="numeric" autocomplete="off" required></label>
+        <button type="submit">Find Product</button>
+      </form>
+      <div id="manualProductResult" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
       <div class="panel-heading">
         <div>
           <h2>Unknown Products</h2>
@@ -127,6 +136,6 @@
     </section>
   </main>
 
-  <script src="/static/scripts/app.js"></script>
+  <script src="/static/scripts/app.js?v=20261003-db-first"></script>
 </body>
 </html>

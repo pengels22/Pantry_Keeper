@@ -17,3 +17,19 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def database_insert(db, model):
+    if db.bind.dialect.name == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert
+    elif db.bind.dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        raise RuntimeError("Pantry Keeper supports SQLite and PostgreSQL.")
+    return insert(model)
+
+
+def insert_if_absent(db, model, values, unique_columns):
+    """Atomic insert without committing the caller's receipt transaction."""
+    statement = database_insert(db, model).values(**values).on_conflict_do_nothing(index_elements=unique_columns)
+    return db.execute(statement).rowcount

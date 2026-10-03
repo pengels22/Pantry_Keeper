@@ -43,6 +43,8 @@
     const unique = [...new Map(items.filter(item => item.raw_code).map(item => [item.raw_code, item])).values()];
     try {
       for (let index = 0; index < unique.length; index++) {
+        // Search one unknown product at a time, with no rapid bulk navigation.
+        if (index > 0) await new Promise(resolve => setTimeout(resolve, 1000));
         const item = unique[index];
         progress(`Looking up Meijer products ${index + 1} of ${unique.length}: ${item.receipt_description || item.raw_code}`);
         const queries = [item.raw_code];
@@ -50,7 +52,9 @@
         let candidates = [];
         const collected = new Map();
         for (const query of queries) {
-          const url = `https://www.meijer.com/shopping/search.html?text=${encodeURIComponent(query)}`;
+          const search = new URL(item.meijer_search_url || 'https://www.meijer.com/shopping/search.html');
+          search.searchParams.set('text', query);
+          const url = search.href;
           try {
             if (searchTab) await api.tabs.update(searchTab.id, {url, active: false});
             else searchTab = await api.tabs.create({url, active: false});

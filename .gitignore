@@ -1,10 +1,8 @@
-.venv/
+.venv*/
 .env
 __pycache__/
 *.pyc
 *.db
-.venv-next/
-.venv-python312-backup/
 safari-build*/
 dist/
 node_modules/
