@@ -72,6 +72,35 @@ The startup script binds to all network interfaces (`0.0.0.0`) on port 8000. Ope
 
 This defaults to SQLite. The app is configured for Python 3.14.8 and runs directly with `./run.sh`.
 
+## Start automatically with systemd
+
+`deploy/pantry-keeper.service` runs the backend as `administrator` from
+`/home/administrator/Pantry_Keeper`, using the existing virtual environment,
+`.env`, and database. It starts at boot, restarts after failures, and sends logs
+to the system journal. Adjust the user, group, and paths for another installation.
+
+For initial installation, stop any manually started `./run.sh` process first
+(Ctrl+C in its terminal), then run:
+
+```bash
+sudo install -m 644 deploy/pantry-keeper.service /etc/systemd/system/pantry-keeper.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now pantry-keeper.service
+```
+
+Once installed, manage the backend with systemd instead of running a second
+`./run.sh` process on the same port:
+
+```bash
+sudo systemctl status pantry-keeper.service
+sudo systemctl restart pantry-keeper.service
+sudo journalctl -u pantry-keeper.service -f
+```
+
+Restart the service after changing code or `.env`. To stop it, use
+`sudo systemctl stop pantry-keeper.service`; to stop it and turn off boot startup,
+use `sudo systemctl disable --now pantry-keeper.service`.
+
 ## Safari extension
 
 The extension captures receipt text, images, or PDFs on demand, saves server settings, and opens a temporary receipt draft in Pantry Keeper for review. It supports Mac and iPhone/iPad packaging through Xcode.
