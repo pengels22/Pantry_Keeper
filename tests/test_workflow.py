@@ -234,6 +234,39 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(saved['name'], product['name'])
         self.assertEqual(saved['inventory_quantity'], 1)
 
+    def test_inventory_csv_import_export_and_recipe_compare(self):
+        csv_data = (
+            'upc,name,brand,quantity,location,category\n'
+            '12345,All Purpose Flour,King Arthur,2,Pantry,Baking\n'
+            ',Kosher Salt,Diamond Crystal,1,Spice Cabinet,Seasoning\n'
+        )
+        response = self.client.post('/api/inventory/import',
+            files={'file': ('inventory.csv', csv_data, 'text/csv')})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['imported'], 2)
+        dashboard = self.client.get('/api/dashboard').json()
+        self.assertEqual(len(dashboard['products']), 2)
+        self.assertEqual(sum(p['inventory_quantity'] for p in dashboard['products']), 3)
+
+        recipe = self.client.post('/api/recipes/compare', json={
+            'text': '2 cups flour\n1 tsp salt\n1 lb chicken'
+        })
+        self.assertEqual(recipe.status_code, 200)
+        result = recipe.json()
+        self.assertEqual(len(result['in_stock']), 2)
+        self.assertEqual([item['ingredient'] for item in result['shopping_list']], ['1 lb chicken'])
+
+        export = self.client.get('/api/inventory/export')
+        self.assertEqual(export.status_code, 200)
+        self.assertIn('All Purpose Flour', export.text)
+        self.assertIn('Kosher Salt', export.text)
+
+        recipe_csv = 'ingredient,quantity\nflour,2 cups\nchicken,1 lb\n'
+        upload = self.client.post('/api/recipes/upload',
+            files={'file': ('recipe.csv', recipe_csv, 'text/csv')})
+        self.assertEqual(upload.status_code, 200)
+        self.assertEqual(len(upload.json()['shopping_list']), 1)
+
     def test_upc_normalization_preserves_zeros_and_text(self):
         self.assertEqual(normalize_upc(' 00-719 283a95643 '), '0071928395643')
         self.assertEqual(normalize_upc('71928395643'), '71928395643')

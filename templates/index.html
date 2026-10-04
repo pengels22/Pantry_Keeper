@@ -104,6 +104,29 @@
     <section class="panel">
       <div class="panel-heading">
         <div>
+          <h2>Recipe Shopping List</h2>
+          <p>Upload or paste ingredients to compare against current inventory.</p>
+        </div>
+      </div>
+      <div class="recipe-grid">
+        <label class="capture-card">
+          <span class="capture-title">Upload Recipe</span>
+          <span class="capture-help">Use a .txt file with one ingredient per line or a CSV with an ingredient/name column.</span>
+          <input id="recipeFileInput" type="file" accept=".txt,.csv,text/plain,text/csv">
+        </label>
+        <form id="recipeTextForm" class="recipe-form">
+          <label>Ingredients
+            <textarea id="recipeText" rows="8" placeholder="2 cups flour&#10;1 tsp salt&#10;1 lb chicken"></textarea>
+          </label>
+          <button type="submit">Compare Recipe</button>
+        </form>
+      </div>
+      <div id="recipeResult" class="recipe-result" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
           <h2>Unknown Products</h2>
           <p>Identify a code once and Pantry Keeper remembers it.</p>
         </div>
@@ -117,6 +140,10 @@
         <div>
           <h2>Current Inventory</h2>
           <p>Quantities currently tracked from imported receipts.</p>
+        </div>
+        <div class="form-actions compact-actions">
+          <a class="button secondary" href="/api/inventory/export">Export CSV</a>
+          <label class="button secondary file-button">Import CSV <input id="inventoryCsvInput" type="file" accept=".csv,text/csv"></label>
         </div>
       </div>
 

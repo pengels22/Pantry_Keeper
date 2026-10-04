@@ -26,7 +26,7 @@ def extract_text_from_image(image_bytes: bytes) -> str:
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     try:
         text = pytesseract.image_to_string(image, config="--psm 6", timeout=45)
-    except pytesseract.TesseractNotFoundError:
+    except (pytesseract.TesseractNotFoundError, OSError):
         raise OCRUnavailable("Tesseract is not installed or its configured path is incorrect.")
     except RuntimeError:
         raise OCRUnavailable("Receipt OCR timed out. Try a smaller, clearer image.")

@@ -21,6 +21,12 @@ async function api(url, options = {}) {
   return body;
 }
 
+async function apiFile(url, file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  return api(url, { method: "POST", body: fd });
+}
+
 function openExternalProductSearch(url) {
   // Browser security prevents a web application from forcing Safari Private
   // Browsing. This function is intentionally isolated so a future local macOS
@@ -357,6 +363,55 @@ async function lookupManualUpc(event) {
   } catch (err) { setStatus(err.message, true); }
 }
 
+function renderRecipeResult(result) {
+  const container = $("#recipeResult");
+  const inStock = result.in_stock || [];
+  const shopping = result.shopping_list || [];
+  container.innerHTML = `
+    <div class="recipe-columns">
+      <article>
+        <h3>In Stock (${inStock.length})</h3>
+        <ul>${inStock.map((item) => `<li><strong>${escapeHtml(item.ingredient)}</strong><br><small>${escapeHtml(item.matched_product?.name || '')} · Qty ${escapeHtml(item.matched_product?.inventory_quantity ?? '')}</small></li>`).join('') || '<li>Nothing matched current inventory.</li>'}</ul>
+      </article>
+      <article>
+        <h3>Shopping List (${shopping.length})</h3>
+        <ul>${shopping.map((item) => `<li>${escapeHtml(item.ingredient)}</li>`).join('') || '<li>No additional ingredients needed.</li>'}</ul>
+      </article>
+    </div>`;
+}
+
+async function compareRecipeText(event) {
+  event.preventDefault();
+  try {
+    const text = $("#recipeText").value.trim();
+    const result = await api("/api/recipes/compare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    renderRecipeResult(result);
+    setStatus("Recipe compared against current inventory.");
+  } catch (err) { setStatus(err.message, true); }
+}
+
+async function uploadRecipeFile(file) {
+  if (!file) return;
+  try {
+    const result = await apiFile("/api/recipes/upload", file);
+    renderRecipeResult(result);
+    setStatus("Recipe file compared against current inventory.");
+  } catch (err) { setStatus(err.message, true); }
+}
+
+async function importInventoryCsv(file) {
+  if (!file) return;
+  try {
+    const result = await apiFile("/api/inventory/import", file);
+    await loadDashboard();
+    setStatus(`Inventory CSV imported. ${result.imported} new row(s), ${result.updated} updated row(s).`);
+  } catch (err) { setStatus(err.message, true); }
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -367,9 +422,12 @@ function escapeHtml(value) {
 }
 
 $('#manualUpcForm').addEventListener('submit', lookupManualUpc);
+$('#recipeTextForm').addEventListener('submit', compareRecipeText);
 
 $("#uploadInput").addEventListener("change", (e) => handleImage(e.target.files[0], "upload"));
 $("#cameraInput").addEventListener("change", (e) => handleImage(e.target.files[0], "camera"));
+$("#recipeFileInput").addEventListener("change", (e) => uploadRecipeFile(e.target.files[0]));
+$("#inventoryCsvInput").addEventListener("change", (e) => importInventoryCsv(e.target.files[0]));
 $("#importReceiptBtn").addEventListener("click", importCurrentReceipt);
 $("#refreshBtn").addEventListener("click", () => Promise.all([loadDashboard(), loadUnknown()]));
 $("#loadUnknownBtn").addEventListener("click", loadUnknown);

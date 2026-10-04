@@ -2,6 +2,10 @@ import os
 import math
 import json
 import secrets
+import csv
+import hashlib
+import io
+import re
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -11,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -39,6 +43,19 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 initialize_database(engine)
+
+INGREDIENT_UNITS = {
+    "tsp", "teaspoon", "teaspoons", "tbsp", "tablespoon", "tablespoons", "cup", "cups",
+    "oz", "ounce", "ounces", "lb", "lbs", "pound", "pounds", "g", "gram", "grams",
+    "kg", "ml", "l", "liter", "liters", "pinch", "can", "cans", "package", "packages",
+    "pkg", "bag", "bags", "clove", "cloves", "slice", "slices", "whole",
+}
+
+INGREDIENT_WORDS_TO_IGNORE = {
+    "fresh", "chopped", "diced", "minced", "sliced", "shredded", "grated", "ground",
+    "large", "small", "medium", "optional", "to", "taste", "and", "or", "of", "the",
+    "a", "an", "for", "with", "plus", "extra", "divided", "packed", "drained",
+}
 
 
 def require_extension_token(authorization: str | None):
@@ -119,6 +136,118 @@ def serialize_product(p: Product):
     }
 
 
+def serialize_inventory_product(p: Product, inventory_by_product):
+    row = inventory_by_product.get(p.id)
+    return {
+        **serialize_product(p),
+        "inventory_quantity": row.quantity if row else 0,
+        "inventory_location": row.location if row and row.location is not None else p.default_location,
+    }
+
+
+def inventory_rows(db):
+    products = db.query(Product).order_by(Product.name.asc()).all()
+    inventory = db.query(Inventory).all()
+    inventory_by_product = {x.product_id: x for x in inventory}
+    return [serialize_inventory_product(p, inventory_by_product) for p in products]
+
+
+def generated_inventory_code(name):
+    digest = hashlib.sha1(name.strip().lower().encode("utf-8")).hexdigest()
+    return "99" + str(int(digest[:14], 16)).zfill(17)[:17]
+
+
+def parse_quantity(value, default=0.0):
+    try:
+        quantity = float(value if value not in (None, "") else default)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Quantity must be numeric.")
+    if not math.isfinite(quantity) or quantity < 0:
+        raise HTTPException(status_code=400, detail="Quantity must be finite and nonnegative.")
+    return quantity
+
+
+def ingredient_name(value):
+    text = re.sub(r"\([^)]*\)", " ", value.lower())
+    text = re.sub(r"\b\d+([./]\d+)?\b", " ", text)
+    text = re.sub(r"[^\w\s-]", " ", text)
+    tokens = []
+    for token in re.split(r"\s+", text):
+        token = token.strip("-_")
+        if len(token) < 2 or token in INGREDIENT_UNITS or token in INGREDIENT_WORDS_TO_IGNORE:
+            continue
+        tokens.append(token)
+    return " ".join(tokens).strip()
+
+
+def ingredient_tokens(value):
+    return set(ingredient_name(value).split())
+
+
+def parse_recipe_text(text):
+    ingredients = []
+    for line in text.splitlines():
+        line = line.strip(" \t-*•")
+        if not line or line.lower() in {"ingredients", "ingredient list"}:
+            continue
+        ingredients.append({"raw": line, "name": ingredient_name(line) or line.lower()})
+    return ingredients
+
+
+def parse_recipe_csv(text):
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        return []
+    fields = {field.lower().strip(): field for field in reader.fieldnames}
+    name_field = fields.get("ingredient") or fields.get("name") or fields.get("item")
+    quantity_field = fields.get("quantity") or fields.get("qty") or fields.get("amount")
+    if not name_field:
+        raise HTTPException(status_code=400, detail="Recipe CSV needs an ingredient, name, or item column.")
+    ingredients = []
+    for row in reader:
+        raw_name = (row.get(name_field) or "").strip()
+        if not raw_name:
+            continue
+        quantity = (row.get(quantity_field) or "").strip() if quantity_field else ""
+        raw = f"{quantity} {raw_name}".strip()
+        ingredients.append({"raw": raw, "name": ingredient_name(raw_name) or raw_name.lower()})
+    return ingredients
+
+
+def compare_ingredients(db, ingredients):
+    stock = [row for row in inventory_rows(db) if float(row.get("inventory_quantity") or 0) > 0]
+    results = []
+    for ingredient in ingredients:
+        tokens = ingredient_tokens(ingredient["name"])
+        best = None
+        best_score = 0
+        for product in stock:
+            haystack = " ".join(str(product.get(field) or "") for field in ["name", "brand", "category", "notes"]).lower()
+            product_tokens = set(re.findall(r"[a-z0-9]+", haystack))
+            if not tokens or not product_tokens:
+                continue
+            overlap = len(tokens & product_tokens)
+            score = overlap / max(len(tokens), 1)
+            if ingredient["name"] and ingredient["name"] in haystack:
+                score += 0.75
+            if score > best_score:
+                best = product
+                best_score = score
+        matched = bool(best and best_score >= 0.5)
+        results.append({
+            "ingredient": ingredient["raw"],
+            "normalized_ingredient": ingredient["name"],
+            "status": "in_stock" if matched else "purchase",
+            "matched_product": best if matched else None,
+            "match_score": round(best_score, 3) if matched else 0,
+        })
+    return {
+        "items": results,
+        "in_stock": [item for item in results if item["status"] == "in_stock"],
+        "shopping_list": [item for item in results if item["status"] == "purchase"],
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html", context={"app_name": APP_NAME})
@@ -126,22 +255,121 @@ def index(request: Request):
 
 @app.get("/api/dashboard")
 def dashboard(db: Session = Depends(get_db)):
-    products = db.query(Product).order_by(Product.name.asc()).all()
-    inventory = db.query(Inventory).all()
-    inventory_by_product = {x.product_id: x for x in inventory}
-
     return {
-        "products": [
-            {
-                **serialize_product(p),
-                "inventory_quantity": inventory_by_product.get(p.id).quantity if p.id in inventory_by_product else 0,
-                "inventory_location": inventory_by_product.get(p.id).location if p.id in inventory_by_product else p.default_location,
-            }
-            for p in products
-        ],
+        "products": inventory_rows(db),
         "receipt_count": db.query(Receipt).count(),
         "unknown_count": db.query(ReceiptItem).filter(ReceiptItem.status == "unresolved").count(),
     }
+
+
+@app.get("/api/inventory/export")
+def export_inventory(db: Session = Depends(get_db)):
+    output = io.StringIO()
+    fields = [
+        "upc", "name", "brand", "size", "unit", "category", "notes",
+        "default_location", "quantity", "location",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fields)
+    writer.writeheader()
+    for product in inventory_rows(db):
+        writer.writerow({
+            "upc": product.get("upc") or product.get("receipt_code_raw") or "",
+            "name": product.get("name") or "",
+            "brand": product.get("brand") or "",
+            "size": product.get("size") or "",
+            "unit": product.get("unit") or "",
+            "category": product.get("category") or "",
+            "notes": product.get("notes") or "",
+            "default_location": product.get("default_location") or "",
+            "quantity": product.get("inventory_quantity") or 0,
+            "location": product.get("inventory_location") or "",
+        })
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="pantry-inventory.csv"'},
+    )
+
+
+@app.post("/api/inventory/import")
+async def import_inventory_csv(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    data = await file.read(2 * 1024 * 1024 + 1)
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Inventory CSV is too large (maximum 2 MB).")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Inventory CSV must be UTF-8 text.") from exc
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="Inventory CSV needs a header row.")
+    fields = {field.lower().strip(): field for field in reader.fieldnames}
+    name_field = fields.get("name") or fields.get("product") or fields.get("item")
+    quantity_field = fields.get("quantity") or fields.get("qty") or fields.get("inventory_quantity")
+    if not name_field:
+        raise HTTPException(status_code=400, detail="Inventory CSV needs a name, product, or item column.")
+
+    imported = 0
+    updated = 0
+    for row in reader:
+        name = (row.get(name_field) or "").strip()
+        if not name:
+            continue
+        upc = (row.get(fields.get("upc", ""), "") or row.get(fields.get("receipt_code_raw", ""), "") or "").strip()
+        if not upc:
+            upc = generated_inventory_code(name)
+        payload = {
+            "name": name,
+            "brand": row.get(fields.get("brand", ""), ""),
+            "size": row.get(fields.get("size", ""), ""),
+            "unit": row.get(fields.get("unit", ""), ""),
+            "category": row.get(fields.get("category", ""), ""),
+            "notes": row.get(fields.get("notes", ""), ""),
+            "default_location": row.get(fields.get("default_location", ""), "") or row.get(fields.get("location", ""), ""),
+            "lookup_source": "csv_import",
+        }
+        product = save_identified_product(db, upc, payload)
+        quantity = parse_quantity(row.get(quantity_field) if quantity_field else 0)
+        location = (row.get(fields.get("location", ""), "") or payload["default_location"] or "").strip() or None
+        inventory = db.query(Inventory).filter(Inventory.product_id == product.id).first()
+        if not inventory:
+            add_to_inventory(db, product, 0, location)
+            inventory = db.query(Inventory).filter(Inventory.product_id == product.id).first()
+            imported += 1
+        else:
+            updated += 1
+        inventory.quantity = quantity
+        inventory.location = location
+    db.commit()
+    return {"imported": imported, "updated": updated}
+
+
+@app.post("/api/recipes/compare")
+def compare_recipe(payload: dict, db: Session = Depends(get_db)):
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Recipe text is required.")
+    ingredients = parse_recipe_text(text)
+    if not ingredients:
+        raise HTTPException(status_code=400, detail="No ingredients found.")
+    return compare_ingredients(db, ingredients)
+
+
+@app.post("/api/recipes/upload")
+async def upload_recipe(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    data = await file.read(512 * 1024 + 1)
+    if len(data) > 512 * 1024:
+        raise HTTPException(status_code=413, detail="Recipe file is too large (maximum 512 KB).")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Recipe file must be UTF-8 text or CSV.") from exc
+    filename = (file.filename or "").lower()
+    ingredients = parse_recipe_csv(text) if filename.endswith(".csv") else parse_recipe_text(text)
+    if not ingredients:
+        raise HTTPException(status_code=400, detail="No ingredients found.")
+    return compare_ingredients(db, ingredients)
 
 
 @app.post("/api/receipts/scan-image")
