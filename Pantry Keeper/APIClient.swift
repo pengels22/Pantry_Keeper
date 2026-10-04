@@ -110,23 +110,35 @@ struct PantryAPI {
         )
     }
 
-    private func request<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil, contentType: String? = nil) async throws -> T {
-        try await request(baseURL.appendingPathComponent(path), method: method, body: body, contentType: contentType)
+    func request<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil, contentType: String? = nil, timeout: TimeInterval = 90) async throws -> T {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
+              let relative = URLComponents(string: path) else { throw PantryAPIError.invalidServerURL }
+        let prefix = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        components.path = prefix.isEmpty ? relative.path : "/" + prefix + relative.path
+        components.queryItems = relative.queryItems
+        guard let url = components.url else { throw PantryAPIError.invalidServerURL }
+        return try await request(url, method: method, body: body, contentType: contentType, timeout: timeout)
     }
 
-    private func request<T: Decodable>(_ url: URL, method: String = "GET", body: Data? = nil, contentType: String? = nil) async throws -> T {
+    private func request<T: Decodable>(_ url: URL, method: String = "GET", body: Data? = nil, contentType: String? = nil, timeout: TimeInterval = 90) async throws -> T {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body
-        request.timeoutInterval = 90
+        request.timeoutInterval = timeout
         if let contentType {
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw PantryAPIError.badResponse }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 404, url.path.contains("recipes") || url.path == "/api/inventory" {
+                throw PantryAPIError.server("This server needs the updated Recipe Assistant backend. Check the Server URL in Settings.")
+            }
             if let error = try? JSONDecoder().decode(ServerError.self, from: data) {
                 throw PantryAPIError.server(error.detail)
+            }
+            if http.statusCode == 422 {
+                throw PantryAPIError.server("The server could not accept these values. Check ingredient quantities and units.")
             }
             throw PantryAPIError.server("Request failed with status \(http.statusCode).")
         }

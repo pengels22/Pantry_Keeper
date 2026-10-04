@@ -359,3 +359,20 @@ dialog {
 summary { cursor: pointer; margin: .5rem 0; }
 #manualUpc { padding: .6rem; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
 #manualProductResult { margin-top: .75rem; }
+
+.conversation { max-height: 24rem; overflow-y: auto; }
+.chat-form { display: grid; gap: .75rem; }
+.chat-form textarea, #manualRecipe textarea { min-height: 5rem; }
+.recipe-instructions { white-space: pre-wrap; }
+#measurementList details { border-bottom: 1px solid var(--border); padding: .75rem 0; }
+#measurementList .form-grid { margin: 1rem 0; }
+#commitForm { margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+#actualUsage { margin-bottom: 1rem; }
+#sessionList { max-width: 100%; padding: .6rem; }
+
+.chat-form textarea, #manualRecipe textarea, #manualRecipe > label > input {
+  width: 100%; padding: .6rem; border: 1px solid var(--border); border-radius: 6px;
+  font: inherit; background: var(--panel); color: var(--text);
+}
+#manualRecipe > label { display: grid; gap: .4rem; margin-bottom: .75rem; }
+button:disabled { opacity: .6; cursor: wait; }

@@ -19,7 +19,9 @@ final class AppModel: ObservableObject {
     }
 
     var api: PantryAPI? {
-        guard let url = URL(string: serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
+        guard let url = URL(string: serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = url.host, !host.isEmpty else { return nil }
         return PantryAPI(baseURL: url)
     }
 

@@ -64,11 +64,21 @@ cd Pantry_Keeper
 python3.14 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
+cat > .env <<'EOF'
+APP_NAME=Pantry Keeper
+DATABASE_URL=sqlite:///./pantry_keeper.db
+ENABLE_OCR=true
+EOF
 ./run.sh
 ```
 
 The startup script binds to all network interfaces (`0.0.0.0`) on port 8000. Open `http://YOUR_SERVER_IP:8000` from another device. Override the address or port with `PANTRY_HOST` or `PANTRY_PORT` when needed.
+
+Create `.env` only for a new installation; preserve an existing configuration.
+The file is ignored by Git. Optional settings include `RECEIPT_API_TOKEN`,
+`TESSERACT_CMD`, `ENABLE_PUBLIC_UPC_LOOKUP` (defaults to `true`), and
+`UPC_LOOKUP_INTERVAL_SECONDS` (defaults to `2`). Recipe chat additionally uses
+`OPENAI_API_KEY` and optional `OPENAI_MODEL`.
 
 This defaults to SQLite. The app is configured for Python 3.14.8 and runs directly with `./run.sh`.
 
@@ -139,3 +149,22 @@ for later purchases. Copy Search URL supports pasting into Safari Private Browsi
 
 Extension v1.2.1 automatically searches Meijer only for unknown UPCs; known products are resolved locally.
 No additional dependencies are needed.
+
+## Recipe Assistant
+
+Open `/recipes` or choose **Recipe Assistant** from the dashboard. Configure usable
+inventory measurements, ask about recipes (or plan manually), choose a recipe,
+reserve with **Start Cooking**, then review actual quantities and explicitly
+confirm consumption after cooking. Cancelling releases holds without consuming
+stock. AI tools only read inventory and validate proposals.
+
+Set `OPENAI_API_KEY` and optionally `OPENAI_MODEL` in the server `.env` to enable
+chat. No new dependencies are required. See [recipe setup, additive migration,
+API, and testing instructions](docs/recipe-planning.md).
+
+With the backend stopped, `.venv/bin/python scripts/migrate.py` backs up an existing
+SQLite database and applies additive migrations. Startup applies the same schema
+changes idempotently. Historical measurements are left unset until configured.
+
+Run `.venv/bin/python -m unittest discover -s tests -v` and `npm test` to check both
+receipt workflows and recipe reservation/consumption behavior.

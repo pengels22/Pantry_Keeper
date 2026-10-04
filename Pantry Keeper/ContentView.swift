@@ -12,6 +12,9 @@ struct ContentView: View {
                 .tabItem { Label("Scan", systemImage: "barcode.viewfinder") }
             UnknownProductsView()
                 .tabItem { Label("Unknown", systemImage: "questionmark.app") }
+            RecipesView()
+                .id(model.serverURLString)
+                .tabItem { Label("Recipes", systemImage: "fork.knife") }
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
@@ -423,7 +426,7 @@ struct SettingsView: View {
                     }
                 }
                 Section("About") {
-                    Text("This iOS app uses the Pantry Keeper FastAPI backend copied into Backend/Pantry_Keeper. Run that server on your Mac, Raspberry Pi, or home server, then point this app at its URL.")
+                    Text("Connect to your updated Pantry Keeper server using its network address. On an iPhone, localhost refers to the phone, not your server. Recipe AI uses the API key configured on the server.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

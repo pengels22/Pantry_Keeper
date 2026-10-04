@@ -27,6 +27,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Pantry Keeper connects to your pantry server to load inventory and create recipes.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Pantry Keeper uses the camera to scan product barcodes and receipt images.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

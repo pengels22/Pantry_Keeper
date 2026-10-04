@@ -1,0 +1,42 @@
+{
+  "reply": "Try chicken pasta with ingredients from your pantry.",
+  "proposal": {
+    "recipe": "Chicken Pasta",
+    "instructions": "Cook chicken thoroughly and combine with cooked pasta.",
+    "ingredients": [
+      {
+        "inventory_id": 1,
+        "name": "Chicken Breast",
+        "amount": 2.0,
+        "unit": "each",
+        "usable_amount": 2.0,
+        "usable_unit": "each",
+        "available_quantity": 4.0,
+        "available": true,
+        "notes": ""
+      },
+      {
+        "inventory_id": 2,
+        "name": "Pasta",
+        "amount": 8.0,
+        "unit": "oz",
+        "usable_amount": 8.0,
+        "usable_unit": "oz",
+        "available_quantity": 16.0,
+        "available": true,
+        "notes": ""
+      },
+      {
+        "inventory_id": 3,
+        "name": "Parmesan",
+        "amount": 3.0,
+        "unit": "oz",
+        "usable_amount": 3.0,
+        "usable_unit": "oz",
+        "available_quantity": 9.0,
+        "available": true,
+        "notes": ""
+      }
+    ]
+  }
+}

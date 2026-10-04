@@ -1,0 +1,20 @@
+{
+  "inventory_id": 1,
+  "product_id": 1,
+  "name": "Chicken Breast",
+  "brand": null,
+  "upc": "12345678900",
+  "category": "Dinner",
+  "location": null,
+  "quantity": 1.0,
+  "size": null,
+  "unit": null,
+  "package_quantity": null,
+  "package_size": null,
+  "package_unit": null,
+  "usable_quantity": 4.0,
+  "usable_unit": "each",
+  "reserved_quantity": 0.0,
+  "available_quantity": 4.0,
+  "measurement_required": false
+}

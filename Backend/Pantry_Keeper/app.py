@@ -140,6 +140,14 @@ def serialize_inventory_product(p: Product, inventory_by_product):
     row = inventory_by_product.get(p.id)
     return {
         **serialize_product(p),
+        "inventory_id": row.id if row else None,
+        "package_quantity": row.package_quantity if row else None,
+        "package_size": row.package_size if row else None,
+        "package_unit": row.package_unit if row else None,
+        "usable_quantity": row.usable_quantity if row else None,
+        "usable_unit": row.usable_unit if row else None,
+        "reserved_quantity": row.reserved_quantity if row else 0,
+        "available_quantity": max(0, row.usable_quantity - row.reserved_quantity) if row and row.usable_quantity is not None else None,
         "inventory_quantity": row.quantity if row else 0,
         "inventory_location": row.location if row and row.location is not None else p.default_location,
     }
@@ -215,7 +223,9 @@ def parse_recipe_csv(text):
 
 
 def compare_ingredients(db, ingredients):
-    stock = [row for row in inventory_rows(db) if float(row.get("inventory_quantity") or 0) > 0]
+    stock = [row for row in inventory_rows(db)
+             if float(row["available_quantity"] if row.get("available_quantity") is not None
+                      else row.get("inventory_quantity") or 0) > 0]
     results = []
     for ingredient in ingredients:
         tokens = ingredient_tokens(ingredient["name"])
@@ -339,8 +349,8 @@ async def import_inventory_csv(file: UploadFile = File(...), db: Session = Depen
             imported += 1
         else:
             updated += 1
-        inventory.quantity = quantity
-        inventory.location = location
+        from services.recipe_inventory import set_legacy_quantity
+        set_legacy_quantity(db, inventory.id, quantity, location, update_location=True)
     db.commit()
     return {"imported": imported, "updated": updated}
 
@@ -728,11 +738,20 @@ def update_inventory(product_id: int, payload: dict, db: Session = Depends(get_d
     row = db.query(Inventory).filter(Inventory.product_id == product_id).first()
     if not row:
         row = add_to_inventory(db, product, 0)
-    row.quantity = quantity
     if "location" in payload:
         location = payload["location"]
         if location is not None and not isinstance(location, str):
             raise HTTPException(status_code=400, detail="Location must be text.")
-        row.location = location
+    from services.recipe_inventory import set_legacy_quantity
+    row = set_legacy_quantity(db, row.id, quantity, payload.get("location"), update_location="location" in payload)
     db.commit()
     return {"product_id": product_id, "quantity": row.quantity, "location": row.location}
+
+
+@app.get("/recipes", response_class=HTMLResponse)
+def recipe_assistant(request: Request):
+    return templates.TemplateResponse(request=request, name="recipes.html", context={"app_name": APP_NAME})
+
+
+from recipe_routes import router as recipe_router
+app.include_router(recipe_router)

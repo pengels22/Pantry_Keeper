@@ -96,7 +96,7 @@ async function loadDashboard() {
   for (const p of data.products) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${escapeHtml(p.name)}</td>
+      <td>${escapeHtml(p.name)}${p.usable_quantity != null ? `<br><small>Usable: ${escapeHtml(p.usable_quantity)} ${escapeHtml(p.usable_unit || '')} · Reserved: ${escapeHtml(p.reserved_quantity || 0)}</small>` : ''}</td>
       <td>${escapeHtml(p.upc || p.receipt_code_raw)}</td>
       <td><input data-quantity type="number" min="0" step="any" value="${p.inventory_quantity ?? 0}" aria-label="Quantity"><button data-save>Save</button></td>
       <td>${escapeHtml(p.inventory_location || "")}</td>
@@ -371,7 +371,7 @@ function renderRecipeResult(result) {
     <div class="recipe-columns">
       <article>
         <h3>In Stock (${inStock.length})</h3>
-        <ul>${inStock.map((item) => `<li><strong>${escapeHtml(item.ingredient)}</strong><br><small>${escapeHtml(item.matched_product?.name || '')} · Qty ${escapeHtml(item.matched_product?.inventory_quantity ?? '')}</small></li>`).join('') || '<li>Nothing matched current inventory.</li>'}</ul>
+        <ul>${inStock.map((item) => `<li><strong>${escapeHtml(item.ingredient)}</strong><br><small>${escapeHtml(item.matched_product?.name || '')} · Qty ${escapeHtml(item.matched_product?.available_quantity ?? item.matched_product?.inventory_quantity ?? '')}</small></li>`).join('') || '<li>Nothing matched current inventory.</li>'}</ul>
       </article>
       <article>
         <h3>Shopping List (${shopping.length})</h3>
