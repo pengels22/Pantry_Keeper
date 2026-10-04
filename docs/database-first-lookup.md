@@ -175,5 +175,5 @@ Web UI: `templates/index.html`, `static/scripts/app.js`, `static/css/styles.css`
 Extension: `browser_extension/popup.js`, `popup.html`, `manifest.json`, `README.md`;
 restored `product-lookup.js` and `product-capture.js` for unknown-only automatic searches.
 
-Configuration/documentation/tests: `.env.example`, `README.md`, this document,
+Configuration/documentation/tests: `README.md`, this document,
 `tests/test_workflow.py`, and `tests/test_extension.cjs`.

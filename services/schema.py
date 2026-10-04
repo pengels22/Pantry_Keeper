@@ -30,4 +30,17 @@ def initialize_database(engine):
                 for row in connection.execute(text("SELECT id, raw_code, normalized_code FROM receipt_items")).mappings().all():
                     upc = normalize_upc(row["raw_code"] or row["normalized_code"])
                     connection.execute(text("UPDATE receipt_items SET normalized_code=:upc WHERE id=:id"), {"upc": upc, "id": row["id"]})
+        if inspector.has_table("inventory"):
+            inventory_columns = {column["name"] for column in inspector.get_columns("inventory")}
+            additions = {
+                "package_quantity": "FLOAT", "package_size": "FLOAT",
+                "package_unit": "VARCHAR(16)", "usable_quantity": "FLOAT",
+                "usable_unit": "VARCHAR(16)",
+                "reserved_quantity": "FLOAT NOT NULL DEFAULT 0",
+            }
+            for name, definition in additions.items():
+                if name not in inventory_columns:
+                    connection.execute(text(f"ALTER TABLE inventory ADD COLUMN {name} {definition}"))
+            # Historical quantity may mean packages or weight. Leave measurements
+            # unknown until explicitly configured; never infer them from product size.
         Base.metadata.create_all(bind=connection)

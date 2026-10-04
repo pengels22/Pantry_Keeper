@@ -97,6 +97,13 @@ class Inventory(Base):
     location: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_updated: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
+    package_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    package_size: Mapped[float | None] = mapped_column(Float, nullable=True)
+    package_unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    usable_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    usable_unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    reserved_quantity: Mapped[float] = mapped_column(Float, default=0, server_default="0")
+
     product = relationship("Product", back_populates="inventory")
 
 
@@ -128,3 +135,48 @@ class ProductLookupRateLimit(Base):
 
     source: Mapped[str] = mapped_column(String(64), primary_key=True)
     next_lookup_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class RecipeSession(Base):
+    __tablename__ = "recipe_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(32), default="planning")
+    instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+    items = relationship("RecipeSessionItem", back_populates="session", cascade="all, delete-orphan")
+
+
+class RecipeSessionItem(Base):
+    __tablename__ = "recipe_session_items"
+    __table_args__ = (UniqueConstraint("recipe_session_id", "inventory_item_id", name="uq_recipe_inventory"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipe_session_id: Mapped[int] = mapped_column(ForeignKey("recipe_sessions.id"), index=True)
+    inventory_item_id: Mapped[int] = mapped_column(ForeignKey("inventory.id"), index=True)
+    ingredient_name: Mapped[str] = mapped_column(String(255))
+    requested_amount: Mapped[float] = mapped_column(Float)
+    requested_unit: Mapped[str] = mapped_column(String(16))
+    reserved_amount: Mapped[float] = mapped_column(Float, default=0)
+    reserved_unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    consumed_amount: Mapped[float] = mapped_column(Float, default=0)
+    consumed_unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    session = relationship("RecipeSession", back_populates="items")
+
+
+class InventoryTransaction(Base):
+    __tablename__ = "inventory_transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    inventory_item_id: Mapped[int] = mapped_column(ForeignKey("inventory.id"), index=True)
+    change_amount: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    quantity_field: Mapped[str] = mapped_column(String(32), default="usable_quantity")
+    transaction_type: Mapped[str] = mapped_column(String(32))
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recipe_id: Mapped[int | None] = mapped_column(ForeignKey("recipe_sessions.id"), nullable=True, index=True)
+    undo_of_id: Mapped[int | None] = mapped_column(ForeignKey("inventory_transactions.id"), nullable=True, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
