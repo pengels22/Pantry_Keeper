@@ -1,0 +1,24 @@
+[Unit]
+Description=Pantry Keeper backend
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=administrator
+Group=administrator
+WorkingDirectory=/home/administrator/Pantry_Keeper
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/home/administrator/Pantry_Keeper/.env
+ExecStart=/home/administrator/Pantry_Keeper/run.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

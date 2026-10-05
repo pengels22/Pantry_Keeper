@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ app_name }}</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Pantry Keeper</h1>
+      <p>Meijer receipt capture, product catalog, and pantry inventory.</p>
+    </div>
+    <a class="button secondary" href="/recipes">Recipe Assistant</a>
+    <button id="refreshBtn" class="secondary">Refresh</button>
+  </header>
+
+  <main class="container">
+    <section class="stats-grid">
+      <article class="stat-card">
+        <span class="stat-label">Products</span>
+        <strong id="productCount">0</strong>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Receipts</span>
+        <strong id="receiptCount">0</strong>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Unknown Items</span>
+        <strong id="unknownCount">0</strong>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>Add Receipt</h2>
+          <p>Use a screenshot, a phone camera, or the browser-extension path.</p>
+        </div>
+        <a class="button secondary" href="https://www.meijer.com/shopping/orders" target="_blank" rel="noopener">
+          Open Meijer Receipts
+        </a>
+      </div>
+
+      <div class="capture-grid">
+        <label class="capture-card">
+          <span class="capture-title">Upload Screenshot</span>
+          <span class="capture-help">Choose a saved screenshot of the receipt.</span>
+          <input id="uploadInput" type="file" accept="image/*">
+        </label>
+
+        <label class="capture-card">
+          <span class="capture-title">Take Photo</span>
+          <span class="capture-help">On iPhone/iPad this opens the camera.</span>
+          <input id="cameraInput" type="file" accept="image/*" capture="environment">
+        </label>
+
+        <a id="browserHelpBtn" class="capture-card button-card" href="https://www.meijer.com/shopping/orders" target="_blank" rel="noopener">
+          <span class="capture-title">Scan From Browser</span>
+          <span class="capture-help">Open Meijer orders, choose a receipt, then scan it with the Safari extension.</span>
+        </a>
+      </div>
+
+      <div id="scanStatus" class="status hidden"></div>
+    </section>
+
+    <section id="reviewPanel" class="panel hidden">
+      <div class="panel-heading">
+        <div>
+          <h2>Review Receipt</h2>
+          <p>Verify the scan before importing.</p>
+        </div>
+        <button id="importReceiptBtn">Import Receipt</button>
+      </div>
+
+      <p id="receiptItemSummary" role="status"></p>
+      <div id="receiptMeta" class="meta-grid"></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Description</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="reviewTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading"><div><h2>Find or Add Product</h2><p>Enter a UPC or scan it with a barcode reader.</p></div></div>
+      <form id="manualUpcForm" class="form-actions">
+        <label>UPC <input id="manualUpc" type="text" inputmode="numeric" autocomplete="off" required></label>
+        <button type="submit">Find Product</button>
+      </form>
+      <div id="manualProductResult" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>Recipe Shopping List</h2>
+          <p>Upload or paste ingredients to compare against current inventory.</p>
+        </div>
+      </div>
+      <div class="recipe-grid">
+        <label class="capture-card">
+          <span class="capture-title">Upload Recipe</span>
+          <span class="capture-help">Use a .txt file with one ingredient per line or a CSV with an ingredient/name column.</span>
+          <input id="recipeFileInput" type="file" accept=".txt,.csv,text/plain,text/csv">
+        </label>
+        <form id="recipeTextForm" class="recipe-form">
+          <label>Ingredients
+            <textarea id="recipeText" rows="8" placeholder="2 cups flour&#10;1 tsp salt&#10;1 lb chicken"></textarea>
+          </label>
+          <button type="submit">Compare Recipe</button>
+        </form>
+      </div>
+      <div id="recipeResult" class="recipe-result" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>Unknown Products</h2>
+          <p>Identify a code once and Pantry Keeper remembers it.</p>
+        </div>
+        <button id="loadUnknownBtn" class="secondary">Reload</button>
+      </div>
+      <div id="unknownProducts" class="unknown-list"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>Current Inventory</h2>
+          <p>Quantities currently tracked from imported receipts.</p>
+        </div>
+        <div class="form-actions compact-actions">
+          <a class="button secondary" href="/api/inventory/export">Export CSV</a>
+          <label class="button secondary file-button">Import CSV <input id="inventoryCsvInput" type="file" accept=".csv,text/csv"></label>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>UPC / Code</th>
+              <th>Quantity</th>
+              <th>Location</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/scripts/app.js?v=20261003-db-first"></script>
+</body>
+</html>

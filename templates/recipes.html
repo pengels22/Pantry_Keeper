@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Recipe Assistant · {{ app_name }}</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <script src="/static/scripts/recipes.js" defer></script>
+</head>
+<body>
+<header class="topbar"><div><h1>Recipe Assistant</h1><p>Plan from your pantry. Review and confirm what you actually use.</p></div><a class="button secondary" href="/">Pantry Keeper</a></header>
+<main class="container">
+  <p id="recipeStatus" class="status hidden" role="status" aria-live="polite"></p>
+  <section class="panel">
+    <h2>Ask about dinner</h2>
+    <div id="conversation" class="conversation" role="log" aria-live="polite"></div>
+    <form id="chatForm" class="chat-form"><label for="chatInput">Recipe request</label><textarea id="chatInput" maxlength="10000" required placeholder="What can I make tonight with chicken?"></textarea><button id="sendChat" type="submit">Send</button></form>
+    <p>Recipe chat needs an API key configured on the server. You can also plan a recipe manually below.</p>
+  </section>
+  <section id="proposalPanel" class="panel hidden"><h2 id="proposalTitle"></h2><p id="proposalInstructions" class="recipe-instructions"></p><div id="proposalItems"></div><button id="selectRecipe" type="button">Choose This Recipe</button></section>
+  <section class="panel">
+    <h2>Recipe sessions</h2><p>Reopen a session to continue cooking or release its reservations.</p>
+    <div class="search-actions"><select id="sessionList" aria-label="Recipe session"></select><button id="openSession" type="button" class="secondary">Open Session</button></div>
+  </section>
+  <section id="sessionPanel" class="panel hidden">
+    <h2 id="sessionTitle"></h2><p id="sessionState"></p><p id="sessionInstructions" class="recipe-instructions"></p><div id="sessionItems"></div>
+    <div class="search-actions"><button id="startCooking" type="button">Start Cooking</button><button id="finishCooking" type="button">Finished Cooking</button><button id="cancelRecipe" type="button" class="secondary">Cancel Recipe</button></div>
+    <form id="commitForm" class="hidden"><h3>Review actual ingredient use</h3><p>Edit the amounts below. Zero means this ingredient was not used. These quantities will be deducted when you confirm.</p><div id="actualUsage" class="form-grid"></div><label><input id="confirmCooked" type="checkbox" required> I made this recipe and confirm these inventory deductions.</label><div class="search-actions"><button type="submit">Confirm Inventory Consumption</button><button id="backToRecipe" type="button" class="secondary">Back</button></div></form>
+  </section>
+  <details class="panel collapsible-panel">
+    <summary><h2>Inventory measurements</h2></summary><p>Set usable quantities before planning. Existing package counts and product sizes are retained until you explicitly configure measurements. Volume units use US customary measures; weight is never converted to volume.</p>
+    <button id="refreshInventory" type="button" class="secondary">Refresh Inventory</button><div id="measurementList"></div>
+  </details>
+  <details class="panel collapsible-panel">
+    <summary><h2>Plan a recipe manually</h2></summary><form id="manualRecipe"><label>Recipe title<input id="manualRecipeTitle" maxlength="255" required></label><label>Instructions<textarea id="manualInstructions" maxlength="20000"></textarea></label><p>Enter amounts for the exact products you intend to use. Leave unused products at zero.</p><div id="manualIngredients" class="form-grid"></div><button type="submit">Review Recipe Proposal</button></form>
+  </details>
+</main>
+</body>
+</html>
