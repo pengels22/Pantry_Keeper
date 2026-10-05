@@ -168,3 +168,18 @@ changes idempotently. Historical measurements are left unset until configured.
 
 Run `.venv/bin/python -m unittest discover -s tests -v` and `npm test` to check both
 receipt workflows and recipe reservation/consumption behavior.
+
+### Publish the inventory to GitHub Pages
+
+Run `./scripts/publish-inventory.sh` to download the full HTML inventory from
+`http://192.168.1.7:8000/api/inventory?format=html` and push it as `index.html`
+to the current repository's `gh-pages` branch. Git needs credentials with push
+access. In GitHub **Settings → Pages**, select **Deploy from a branch**, then
+**gh-pages** and **/ (root)**. The page includes all inventory and linked product
+fields, including notes, and follows your GitHub Pages visibility settings.
+
+Use `./scripts/publish-inventory.sh --dry-run` to validate the download without
+publishing. Set `PANTRY_PAGES_REPO`, `PANTRY_PAGES_BRANCH`, or
+`PANTRY_INVENTORY_URL` to override the destination or source. Re-run the script
+whenever you want to update the published snapshot. It uses a temporary clone,
+preserves other files on the publishing branch, and skips unchanged snapshots.

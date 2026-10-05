@@ -1,4 +1,5 @@
 """Recipe APIs use one database transaction per user action."""
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from services import recipe_inventory as stock
 from services import recipe_service as recipes
 from services.recipe_schemas import Measurements, RecipeProposal, SessionRequest, CommitRequest, Adjustment, ChatRequest, ConfirmedRequest
 from services.openai_recipes import recipe_chat
+from services.inventory_html import inventory_html
 
 router = APIRouter()
 
@@ -27,7 +29,10 @@ def mutate(db, operation):
 
 @router.get("/api/inventory")
 def inventory(category: str | None = Query(None, max_length=128), limit: int = Query(200, ge=1, le=200),
-              offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
+              offset: int = Query(0, ge=0), db: Session = Depends(get_db),
+              format: Literal["json", "html"] = Query("json")):
+    if format == "html":
+        return inventory_html(db)
     return stock.get_inventory(db, category=category, limit=limit, offset=offset)
 
 

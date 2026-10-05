@@ -38,6 +38,27 @@ class RecipeTests(unittest.TestCase):
             {'inventory_id': self.ids[1], 'amount': 8, 'unit': 'oz'},
             {'inventory_id': self.ids[2], 'amount': 3, 'unit': 'oz'}]}
 
+    def test_inventory_html_exports_all_fields_and_escapes_values(self):
+        with SessionLocal() as db:
+            product = db.query(Product).first()
+            product.notes = '<script>alert("test")</script>'
+            db.commit()
+        response = self.client.get('/api/inventory?format=html&limit=1')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('text/html', response.headers['content-type'])
+        self.assertIn('inventory.reserved_quantity', response.text)
+        self.assertIn('product.notes', response.text)
+        self.assertIn('product.upc', response.text)
+        for name in ('Chicken Breast', 'Pasta', 'Parmesan'):
+            self.assertIn(name, response.text)
+        self.assertNotIn('<script>', response.text)
+        self.assertIn('&lt;script&gt;', response.text)
+        self.assertIsInstance(self.client.get('/api/inventory').json(), list)
+        with SessionLocal() as db:
+            db.query(Inventory).delete()
+            db.commit()
+        self.assertIn('No inventory items.', self.client.get('/api/inventory?format=html').text)
+
     def select(self, proposal=None):
         response = self.client.post('/api/recipes/session', json={'proposal': proposal or self.proposal})
         self.assertEqual(response.status_code, 200, response.text)

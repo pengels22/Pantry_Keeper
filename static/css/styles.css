@@ -376,3 +376,7 @@ summary { cursor: pointer; margin: .5rem 0; }
 }
 #manualRecipe > label { display: grid; gap: .4rem; margin-bottom: .75rem; }
 button:disabled { opacity: .6; cursor: wait; }
+
+.collapsible-panel > summary { margin: 0; }
+.collapsible-panel > summary h2 { display: inline; }
+.collapsible-panel[open] > summary { margin-bottom: 1rem; }

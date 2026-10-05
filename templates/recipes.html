@@ -27,13 +27,13 @@
     <div class="search-actions"><button id="startCooking" type="button">Start Cooking</button><button id="finishCooking" type="button">Finished Cooking</button><button id="cancelRecipe" type="button" class="secondary">Cancel Recipe</button></div>
     <form id="commitForm" class="hidden"><h3>Review actual ingredient use</h3><p>Edit the amounts below. Zero means this ingredient was not used. These quantities will be deducted when you confirm.</p><div id="actualUsage" class="form-grid"></div><label><input id="confirmCooked" type="checkbox" required> I made this recipe and confirm these inventory deductions.</label><div class="search-actions"><button type="submit">Confirm Inventory Consumption</button><button id="backToRecipe" type="button" class="secondary">Back</button></div></form>
   </section>
-  <section class="panel">
-    <h2>Inventory measurements</h2><p>Set usable quantities before planning. Existing package counts and product sizes are retained until you explicitly configure measurements. Volume units use US customary measures; weight is never converted to volume.</p>
+  <details class="panel collapsible-panel">
+    <summary><h2>Inventory measurements</h2></summary><p>Set usable quantities before planning. Existing package counts and product sizes are retained until you explicitly configure measurements. Volume units use US customary measures; weight is never converted to volume.</p>
     <button id="refreshInventory" type="button" class="secondary">Refresh Inventory</button><div id="measurementList"></div>
-  </section>
-  <section class="panel">
-    <h2>Plan a recipe manually</h2><form id="manualRecipe"><label>Recipe title<input id="manualRecipeTitle" maxlength="255" required></label><label>Instructions<textarea id="manualInstructions" maxlength="20000"></textarea></label><p>Enter amounts for the exact products you intend to use. Leave unused products at zero.</p><div id="manualIngredients" class="form-grid"></div><button type="submit">Review Recipe Proposal</button></form>
-  </section>
+  </details>
+  <details class="panel collapsible-panel">
+    <summary><h2>Plan a recipe manually</h2></summary><form id="manualRecipe"><label>Recipe title<input id="manualRecipeTitle" maxlength="255" required></label><label>Instructions<textarea id="manualInstructions" maxlength="20000"></textarea></label><p>Enter amounts for the exact products you intend to use. Leave unused products at zero.</p><div id="manualIngredients" class="form-grid"></div><button type="submit">Review Recipe Proposal</button></form>
+  </details>
 </main>
 </body>
 </html>
