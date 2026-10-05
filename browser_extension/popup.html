@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header><img src="icons/icon-48.png" width="36" height="36" alt=""><div><h1>Pantry Keeper</h1><p>Meijer receipt scanner · v1.2.1</p></div></header>
+  <header><img src="icons/icon-48.png" width="36" height="36" alt=""><div><h1>Pantry Keeper</h1><p>Meijer &amp; Costco receipts · v1.3.0</p></div></header>
   <form id="settingsForm">
     <label for="serverUrl">Pantry Keeper server</label>
     <input id="serverUrl" type="text" inputmode="url" spellcheck="false" autocapitalize="none" placeholder="192.168.1.20:8000" required autocomplete="off">
@@ -15,7 +15,7 @@
     <input id="apiToken" type="password" placeholder="Your receipt API token" autocomplete="off">
     <button id="saveBtn" type="submit" class="secondary">Save settings</button>
   </form>
-  <p class="help">Open one Meijer receipt, then scan it. You’ll review the items in Pantry Keeper before importing.</p>
+  <p class="help">Open one Meijer or Costco receipt, then scan it. You’ll review the items in Pantry Keeper before importing.</p>
   <button id="scanBtn" type="button">Scan this receipt</button>
   <button id="reviewBtn" type="button" hidden>Review scanned receipt</button>
   <button id="openBtn" type="button" class="secondary">Open Pantry Keeper</button>

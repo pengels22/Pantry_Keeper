@@ -16,7 +16,7 @@ function busy(value) {
 }
 async function configure(address, token, capture = false) {
   // Called directly from a button handler so Safari can show its permission prompt.
-  const granted = await extension.permissions.request({ origins: [address.permission, ...(capture ? ['https://*.meijer.com/*'] : [])] });
+  const granted = await extension.permissions.request({ origins: [address.permission, ...(capture ? ['https://*.meijer.com/*', 'https://*.costco.com/*'] : [])] });
   if (!granted) throw new Error('Allow access to your Pantry Keeper server to continue.');
   await extension.storage.local.set({ serverUrl: address.origin, apiToken: token });
   serverInput.value = address.origin;
@@ -71,8 +71,8 @@ scanBtn.addEventListener('click', async () => {
     status('Reading receipt…');
     await permission;
     const [tab] = await extension.tabs.query({ active: true, currentWindow: true });
-    if (tab?.id == null || !PantryExtension.isMeijerPage(tab.url)) {
-      throw new Error('Open a receipt on meijer.com before scanning.');
+    if (tab?.id == null || !PantryExtension.isReceiptPage(tab.url)) {
+      throw new Error('Open a receipt on meijer.com or costco.com before scanning.');
     }
     let data;
     if (PantryExtension.isReceiptPDF(tab.url)) {
@@ -82,7 +82,7 @@ scanBtn.addEventListener('click', async () => {
       try {
         response = await fetch(tab.url, { signal: AbortSignal.timeout(20000) });
       } catch {
-        throw new Error('Could not download the PDF. Allow Meijer website access and try again.');
+        throw new Error('Could not download the PDF. Allow receipt website access and try again.');
       }
       if (!response.ok) throw new Error(`Could not download the receipt PDF (${response.status}).`);
       const blob = await response.blob();
@@ -95,11 +95,11 @@ scanBtn.addEventListener('click', async () => {
       try {
         await extension.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
       } catch {
-        throw new Error('Allow this extension access to Meijer in Safari, then try again.');
+        throw new Error('Allow this extension access to the receipt website in Safari, then try again.');
       }
       const result = await extension.tabs.sendMessage(tab.id, { type: 'PANTRY_KEEPER_CAPTURE' });
       if (!result?.ok) throw new Error('No receipt content found. Wait for the receipt to finish loading and try again.');
-      const hasItemText = /\d{8,14}\s+.+?\s+\d+\.\d{2}\s*[A-Z]?\s*$/m.test(result.text || '');
+      const hasItemText = /(?:E\s+)?\d{3,14}\s+.+?\s+\d+\.\d{2}\s*[A-Z]?\s*$/m.test(result.text || '');
       if (hasItemText || (!result.image_data && !result.image_url)) {
         status('Sending receipt text to Pantry Keeper…');
         try {
@@ -113,14 +113,14 @@ scanBtn.addEventListener('click', async () => {
       if (!data) {
         status('Scanning the receipt image…');
         const imageUrl = result.image_data || result.image_url;
-        if (!imageUrl?.startsWith('data:image/') && !PantryExtension.isMeijerPage(imageUrl)) {
+        if (!imageUrl?.startsWith('data:image/') && !PantryExtension.isReceiptPage(imageUrl)) {
           throw new Error('Could not access this receipt image. Upload a screenshot in Pantry Keeper.');
         }
         let imageResponse;
         try {
           imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(20000) });
         } catch {
-          throw new Error('Could not download the receipt image. Allow Meijer website access or upload a screenshot.');
+          throw new Error('Could not download the receipt image. Allow receipt website access or upload a screenshot.');
         }
         if (!imageResponse.ok) throw new Error('Could not download the receipt image. Try uploading a screenshot.');
         const blob = await imageResponse.blob();
@@ -148,7 +148,7 @@ scanBtn.addEventListener('click', async () => {
     reviewTabId = reviewTab.id;
     reviewBtn.hidden = false;
     const expected = data.parsed.expected_item_count;
-    status(`Captured ${data.parsed.items.length} receipt line(s)${expected != null ? `; receipt lists ${expected} item(s)` : ''}. Your Meijer receipt stays open. Click Review scanned receipt to continue.${lookup.errors.length ? ` Product lookup needs attention: ${lookup.errors[0]}` : ''}`);
+    status(`Captured ${data.parsed.items.length} receipt line(s)${expected != null ? `; receipt lists ${expected} item(s)` : ''}. Your receipt stays open. Click Review scanned receipt to continue.${lookup.errors.length ? ` Product lookup needs attention: ${lookup.errors[0]}` : ''}`);
   } catch (err) { status(err.message, true); }
   finally { busy(false); }
 });

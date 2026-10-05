@@ -4,8 +4,14 @@
   const api = globalThis.browser || globalThis.chrome;
   api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type !== 'PANTRY_KEEPER_CAPTURE') return;
-    const text = document.body?.innerText?.trim() || '';
-    const images = Array.from(document.images || []).filter(image => {
+    // Prefer the open receipt dialog over account history and other receipts.
+    const dialogs = Array.from(document.querySelectorAll?.('[role="dialog"], dialog[open], .modal.show, .modal.in, .modal[aria-hidden="false"], .modal-dialog') || []);
+    const scope = dialogs.find(el => el.getBoundingClientRect().width > 0 && /receipt/i.test(el.innerText || '')) || document.body;
+    let text = scope?.innerText?.trim() || '';
+    // Logos may be images rather than selectable text. The trusted store page
+    // supplies a header marker; uploaded images still use OCR store detection.
+    if (/(^|\.)costco\.com$/i.test(location.hostname || '') && !/\bcost\s*co\b/i.test(text)) text = 'COSTCO WHOLESALE\n' + text;
+    const images = Array.from(scope?.querySelectorAll?.('img') || document.images || []).filter(image => {
       const width = image.naturalWidth || image.width;
       const height = image.naturalHeight || image.height;
       return width >= 150 && height >= 200 && image.getBoundingClientRect().width > 0;

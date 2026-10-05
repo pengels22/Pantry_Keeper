@@ -3,7 +3,7 @@ from fastapi import HTTPException
 
 from db import insert_if_absent
 from models import Product, ReceiptItem
-from services.upc import normalize_upc
+from services.upc import normalize_catalog_code
 from services.product_lookup import find_local_product
 from services.inventory_service import add_to_inventory
 
@@ -26,7 +26,7 @@ def product_values(payload):
 
 def save_identified_product(db, code, payload):
     try:
-        upc = normalize_upc(code)
+        upc = normalize_catalog_code(code)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not upc or len(upc) > 64:
@@ -37,7 +37,7 @@ def save_identified_product(db, code, payload):
         return existing
     # INSERT ON CONFLICT keeps concurrent saves clean and preserves the winner.
     insert_if_absent(db, Product,
-        {"upc": upc, "receipt_code_raw": upc, "gtin_normalized": upc, **values}, ["upc"])
+        {"upc": upc, "receipt_code_raw": upc, "gtin_normalized": None if upc.startswith("costco:") else upc, **values}, ["upc"])
     return find_local_product(db, upc)
 
 

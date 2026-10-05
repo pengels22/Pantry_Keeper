@@ -36,7 +36,7 @@ function popup(options = {}) {
     permissions: { request: async value => { calls.push(['permission', value]); return options.permission !== false; } },
     tabs: {
       query: async () => [{ id: 1, url: options.url || 'https://www.meijer.com/receipt' }],
-      sendMessage: async () => ({ ok: true, text: options.imageOnly ? '' : '012345678901 MILK 3.99', image_url: options.imageOnly ? 'https://static.meijer.com/DigitalReceipt/receipt.png' : null, url: 'https://www.meijer.com/receipt', title: 'Receipt' }),
+      sendMessage: async () => ({ ok: true, text: options.imageOnly ? '' : (options.receiptText || '012345678901 MILK 3.99'), image_url: options.imageOnly ? 'https://static.meijer.com/DigitalReceipt/receipt.png' : null, url: 'https://www.meijer.com/receipt', title: 'Receipt' }),
       create: async value => {calls.push(['tab', value]); return {id: 55};},
       update: async (id, value) => calls.push(['activate', id, value]),
     },
@@ -89,7 +89,7 @@ test('scan sends authorized receipt and opens draft without receipt text or toke
 for (const [name, options, message] of [
   ['permission denied', { permission: false }, /Allow access/],
   ['wrong website', { url: 'https://example.com' }, /Open a receipt on meijer/],
-  ['Meijer permission missing', { injectionError: true }, /Allow this extension access to Meijer/],
+  ['Meijer permission missing', { injectionError: true }, /Allow this extension access to the receipt website/],
   ['bad token', { responseStatus: 401 }, /API token/],
   ['offline server', { networkError: true }, /Could not reach/],
 ]) {
@@ -445,4 +445,38 @@ test('scanner does not search every line if database classification is missing',
   const {calls, elements} = await scan({missingLookup:true});
   assert.match(elements.status.textContent, /check the database before Meijer/);
   assert.equal(calls.some(call => call[0] === 'meijer'), false);
+});
+
+
+test('Costco domains and PDFs are accepted without allowing lookalike hosts', () => {
+  assert.equal(core.PantryExtension.isReceiptPage('https://www.costco.com/myaccount/'), true);
+  assert.equal(core.PantryExtension.isReceiptPDF('https://www.costco.com/receipt.pdf?download=1'), true);
+  for (const url of ['http://costco.com', 'https://costco.com.attacker.test', 'https://fakecostco.com']) {
+    assert.equal(core.PantryExtension.isReceiptPage(url), false);
+  }
+});
+
+test('Costco receipt captures into the existing review without Meijer product searches', async () => {
+  const {calls, elements} = await scan({url: 'https://www.costco.com/myaccount/', receiptText: 'COSTCO\nE 5331 ORG CLASSICO 12.79 N'});
+  const request = calls.find(call => call[0] === 'fetch' && call[1].endsWith('/api/receipts/browser'));
+  assert.ok(request);
+  assert.match(JSON.parse(request[2].body).text, /COSTCO/);
+  assert.equal(calls.some(call => call[0] === 'meijer'), false);
+  assert.equal(calls.filter(call => call[0] === 'tab').length, 1);
+  assert.match(elements.status.textContent, /Captured/);
+});
+
+test('Costco capture prefers the open receipt dialog and adds store text for an image logo', () => {
+  const listeners = [];
+  const dialog = {innerText: 'In-Warehouse Receipt\nE 5331 ORG CLASSICO 12.79 N',
+    getBoundingClientRect: () => ({width: 500}), querySelectorAll: () => []};
+  const context = vm.createContext({browser: {runtime: {onMessage: {addListener: fn => listeners.push(fn)}}},
+    document: {body: {innerText: 'Account history\nOther receipts'}, querySelectorAll: () => [dialog], images: []},
+    location: {hostname: 'www.costco.com', href: 'https://www.costco.com/myaccount/'}});
+  vm.runInContext(fs.readFileSync(path.join(dir, 'content.js'), 'utf8'), context);
+  let capture;
+  listeners[0]({type: 'PANTRY_KEEPER_CAPTURE'}, {}, value => {capture = value;});
+  assert.match(capture.text, /^COSTCO WHOLESALE/);
+  assert.match(capture.text, /ORG CLASSICO/);
+  assert.doesNotMatch(capture.text, /Account history|Other receipts/);
 });

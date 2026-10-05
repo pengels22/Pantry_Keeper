@@ -18,9 +18,16 @@
       return url.protocol === 'https:' && (url.hostname === 'meijer.com' || url.hostname.endsWith('.meijer.com'));
     } catch { return false; }
   }
+  function isCostcoPage(value) {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && (url.hostname === 'costco.com' || url.hostname.endsWith('.costco.com'));
+    } catch { return false; }
+  }
+  function isReceiptPage(value) { return isMeijerPage(value) || isCostcoPage(value); }
   function isReceiptPDF(value) {
-    try { return isMeijerPage(value) && /\.pdf$/i.test(new URL(value).pathname); }
+    try { return isReceiptPage(value) && /\.pdf$/i.test(new URL(value).pathname); }
     catch { return false; }
   }
-  root.PantryExtension = { serverAddress, isMeijerPage, isReceiptPDF };
+  root.PantryExtension = { serverAddress, isMeijerPage, isCostcoPage, isReceiptPage, isReceiptPDF };
 })(globalThis);

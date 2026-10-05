@@ -1,7 +1,7 @@
 """Idempotent, additive migration for SQLite and PostgreSQL installations."""
 from sqlalchemy import inspect, text
 from db import Base
-from services.upc import normalize_upc
+from services.upc import normalize_catalog_code
 
 
 def initialize_database(engine):
@@ -12,7 +12,7 @@ def initialize_database(engine):
             rows = connection.execute(text("SELECT id, receipt_code_raw, gtin_normalized FROM products")).mappings().all()
             normalized = {}
             for row in rows:
-                upc = normalize_upc(row["receipt_code_raw"] or row["gtin_normalized"])
+                upc = normalize_catalog_code(row["receipt_code_raw"] or row["gtin_normalized"])
                 if not upc or upc in normalized:
                     raise RuntimeError(
                         f"UPC migration needs review for product #{row['id']}: empty or duplicate UPC {upc!r}. "
@@ -28,7 +28,7 @@ def initialize_database(engine):
             connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_products_upc ON products (upc)"))
             if "upc" not in columns and inspector.has_table("receipt_items"):
                 for row in connection.execute(text("SELECT id, raw_code, normalized_code FROM receipt_items")).mappings().all():
-                    upc = normalize_upc(row["raw_code"] or row["normalized_code"])
+                    upc = normalize_catalog_code(row["raw_code"] or row["normalized_code"])
                     connection.execute(text("UPDATE receipt_items SET normalized_code=:upc WHERE id=:id"), {"upc": upc, "id": row["id"]})
         if inspector.has_table("inventory"):
             inventory_columns = {column["name"] for column in inspector.get_columns("inventory")}

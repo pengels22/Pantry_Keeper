@@ -8,26 +8,28 @@ from sqlalchemy.orm import Session
 
 from db import insert_if_absent
 from models import Product, ProductLookupCache, ProductLookupRateLimit, utc_now
-from services.upc import normalize_upc
+from services.upc import normalize_catalog_code
 
 SOURCE = "open_food_facts"
 CACHE_TTLS = {"FOUND": timedelta(days=7), "NOT_FOUND": timedelta(hours=24), "ERROR": timedelta(minutes=5)}
 
 
 def find_local_products(db: Session, codes) -> dict[str, Product]:
-    upcs = {normalize_upc(code) for code in codes} - {""}
+    upcs = {normalize_catalog_code(code) for code in codes} - {""}
     if not upcs:
         return {}
     return {product.upc: product for product in db.query(Product).filter(Product.upc.in_(upcs)).all()}
 
 
 def find_local_product(db: Session, raw_code: str, normalized_code: str | None = None):
-    upc = normalize_upc(raw_code or normalized_code)
+    upc = normalize_catalog_code(raw_code or normalized_code)
     return find_local_products(db, [upc]).get(upc)
 
 
 def cached_suggestion(db: Session, upc: str):
-    row = db.query(ProductLookupCache).filter_by(upc=normalize_upc(upc), source=SOURCE).first()
+    if normalize_catalog_code(upc).startswith("costco:"):
+        return None
+    row = db.query(ProductLookupCache).filter_by(upc=normalize_catalog_code(upc), source=SOURCE).first()
     if not row or row.expires_at <= utc_now():
         return None
     return json.loads(row.raw_result) if row.status == "FOUND" and row.raw_result else None
@@ -35,7 +37,9 @@ def cached_suggestion(db: Session, upc: str):
 
 async def lookup_open_food_facts(code: str) -> dict | None:
     """Low-level HTTP adapter. Call only through lookup_unknown_product."""
-    url = f"https://world.openfoodfacts.org/api/v2/product/{normalize_upc(code)}.json"
+    if normalize_catalog_code(code).startswith("costco:"):
+        return None
+    url = f"https://world.openfoodfacts.org/api/v2/product/{normalize_catalog_code(code)}.json"
     async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
         resp = await client.get(url, headers={"User-Agent": "Pantry-Keeper/0.2"})
         if resp.status_code == 404:
@@ -63,10 +67,12 @@ async def lookup_unknown_product(db: Session, upc: str, fetcher=lookup_open_food
     The gate is stored in the database so multiple server workers share the
     limit. Busy callers get RATE_LIMITED instead of spinning or retrying HTTP.
     """
-    upc = normalize_upc(upc)
+    upc = normalize_catalog_code(upc)
     local = find_local_product(db, upc)
     if local:
         return {"product": local, "source": "Pantry Keeper", "lookup_status": "KNOWN"}
+    if upc.startswith("costco:"):
+        return {"lookup_status": "RETAILER_ITEM_NUMBER"}
     if not upc:
         return {"lookup_status": "INVALID_UPC"}
     now = utc_now()
@@ -122,4 +128,9 @@ async def lookup_unknown_product(db: Session, upc: str, fetcher=lookup_open_food
 
 def meijer_search_url(code: str) -> str:
     # This builds a manual link; it never requests or scrapes Meijer.
-    return f"https://www.meijer.com/shopping/search.html?text={quote_plus(normalize_upc(code))}"
+    return f"https://www.meijer.com/shopping/search.html?text={quote_plus(normalize_catalog_code(code))}"
+
+
+def costco_search_url(code: str) -> str:
+    number = normalize_catalog_code(code).removeprefix('costco:')
+    return f"https://www.costco.com/s?keyword={quote_plus(number)}"

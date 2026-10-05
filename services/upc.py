@@ -9,3 +9,13 @@ def normalize_upc(value: str | None) -> str:
     if not isinstance(value, str):
         raise ValueError("UPC must be text so leading zeros are preserved.")
     return re.sub(r"[^0-9]", "", value)
+
+
+def normalize_catalog_code(value: str | None) -> str:
+    """Preserve scoped retailer item numbers without treating them as barcodes."""
+    if isinstance(value, str) and value.lower().startswith('costco:'):
+        code = value.split(':', 1)[1].strip()
+        if not re.fullmatch(r'[0-9]{3,10}', code):
+            raise ValueError('Costco item number must contain 3–10 digits.')
+        return 'costco:' + code
+    return normalize_upc(value)

@@ -9,7 +9,7 @@ from services import recipe_inventory as stock
 from services import recipe_service as recipes
 from services.recipe_schemas import Measurements, RecipeProposal, SessionRequest, CommitRequest, Adjustment, ChatRequest, ConfirmedRequest
 from services.openai_recipes import recipe_chat
-from services.inventory_html import inventory_html
+from services.inventory_html import inventory_html, inventory_export_json
 
 router = APIRouter()
 
@@ -30,9 +30,11 @@ def mutate(db, operation):
 @router.get("/api/inventory")
 def inventory(category: str | None = Query(None, max_length=128), limit: int = Query(200, ge=1, le=200),
               offset: int = Query(0, ge=0), db: Session = Depends(get_db),
-              format: Literal["json", "html"] = Query("json")):
+              format: Literal["json", "html", "export-json"] = Query("json")):
     if format == "html":
         return inventory_html(db)
+    if format == "export-json":
+        return inventory_export_json(db)
     return stock.get_inventory(db, category=category, limit=limit, offset=offset)
 
 

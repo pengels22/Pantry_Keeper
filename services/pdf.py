@@ -2,7 +2,7 @@
 import math
 import pymupdf
 
-from services.meijer_parser import parse_meijer_receipt
+from services.receipt_parser import parse_receipt
 from services.ocr import extract_text_from_image
 
 
@@ -44,8 +44,8 @@ def extract_receipt_pdf(pdf_bytes: bytes) -> tuple[str, bool]:
         used_ocr = False
         for page in document:
             candidates = [page.get_text('text', sort=True), page.get_text('text'), receipt_word_rows(page)]
-            text = max(candidates, key=lambda value: len(parse_meijer_receipt(value)['items']))
-            parsed = parse_meijer_receipt(text)
+            text = max(candidates, key=lambda value: len(parse_receipt(value)['items']))
+            parsed = parse_receipt(text)
             expected = parsed['expected_item_count']
             if not parsed['items'] or (expected is not None and len(parsed['items']) < expected):
                 area = page.rect.width * page.rect.height
@@ -54,7 +54,7 @@ def extract_receipt_pdf(pdf_bytes: bytes) -> tuple[str, bool]:
                 scale = min(2.5, math.sqrt(12_000_000 / area))
                 pixmap = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
                 ocr_text = extract_text_from_image(pixmap.tobytes('png'))
-                if len(parse_meijer_receipt(ocr_text)['items']) > len(parsed['items']):
+                if len(parse_receipt(ocr_text)['items']) > len(parsed['items']):
                     text = ocr_text
                     used_ocr = True
             pages.append(text)

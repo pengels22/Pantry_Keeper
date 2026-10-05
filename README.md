@@ -183,3 +183,40 @@ publishing. Set `PANTRY_PAGES_REPO`, `PANTRY_PAGES_BRANCH`, or
 `PANTRY_INVENTORY_URL` to override the destination or source. Re-run the script
 whenever you want to update the published snapshot. It uses a temporary clone,
 preserves other files on the publishing branch, and skips unchanged snapshots.
+
+The same publish command also updates `inventory.json`, available at
+`https://pengels22.github.io/Pantry_Keeper/inventory.json`. It is a JSON array
+with every inventory row and all linked product fields. Keys use `inventory.`
+and `product.` prefixes; numbers remain numbers and missing values are null.
+Both published files are snapshots updated when the script runs. The local full
+JSON export is `/api/inventory?format=export-json` (without pagination).
+
+### Custom GPT Actions
+
+In the GPT builder, add an Action with authentication set to **None** and import
+`https://pengels22.github.io/Pantry_Keeper/openapi.json`. Test
+`getPantryInventory` in the Actions editor. It reads the published JSON snapshot
+directly, without relying on web search. Suggested GPT instruction: "Use
+getPantryInventory to check available ingredients before proposing pantry recipes.
+The returned inventory is a published snapshot, not a live database connection."
+
+### Costco warehouse receipts
+
+Receipt uploads, pasted text, and Safari captures automatically detect Meijer or
+Costco from the receipt header. Text PDFs without a selectable Costco logo can
+also be identified by the warehouse header and Costco item layout. Open an
+individual in-warehouse receipt in Costco Orders & Purchases before scanning.
+Install/rebuild Safari extension v1.3.0 and allow access to costco.com.
+
+Costco item numbers use a `costco:` prefix in the catalog's legacy `upc` field
+(e.g. `costco:5331`). They are store identifiers, not barcodes; GTIN is left
+empty, and these codes are never sent to Meijer or Open Food Facts. Unknown
+items have receipt names prefilled for manual identification and a Costco search
+link. Once saved, later receipts reuse the local product automatically.
+
+Matched coupon rows reduce the referenced item's line price and do not add
+inventory. Unmatched coupons remain in the scan with a review warning. Weight
+is not inferred from prices: a Costco package counts as one unless the receipt
+explicitly supplies usable measurements, which can be configured in Inventory
+measurements. Gas-station receipts and online order invoices are not warehouse
+receipt formats. Review quantities and missing items before importing.

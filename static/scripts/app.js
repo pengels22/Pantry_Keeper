@@ -57,7 +57,7 @@ function addSearchControls(container, url) {
   if (!url) return;
   const controls = document.createElement('div');
   controls.className = 'search-actions';
-  for (const [label, action] of [['Search Meijer', () => openExternalProductSearch(url)],
+  for (const [label, action] of [[url.includes('costco.com') ? 'Search Costco' : 'Search Meijer', () => openExternalProductSearch(url)],
                                ['Copy Search URL', () => copySearchUrl(url)]]) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -70,7 +70,7 @@ function addSearchControls(container, url) {
 }
 
 function productFieldsHtml(upc, suggestion = {}) {
-  return `<label>UPC<input data-field="upc" value="${escapeHtml(upc)}" readonly></label>` +
+  return `<label>${String(upc).startsWith("costco:") ? "Costco item number" : "UPC"}<input data-field="upc" value="${escapeHtml(upc)}" readonly></label>` +
     [['name', 'Product Name'], ['brand', 'Brand'], ['size', 'Size'], ['category', 'Category'],
      ['unit', 'Default Unit'], ['notes', 'Notes'], ['default_location', 'Default Location']]
       .map(([field, label]) => `<label>${label}<input data-field="${field}" data-match-${field}
@@ -144,6 +144,8 @@ async function showReview(scan) {
   $('#receiptItemSummary').textContent = expected != null
     ? `${found} receipt line(s) scanned; receipt lists ${expected} item(s).${found < expected ? ' Check for missing items before importing.' : ''}`
     : `${found} receipt line(s) scanned.`;
+  if (parsed.warnings?.length) $('#receiptItemSummary').textContent += ' ' + parsed.warnings.join(' ');
+  if (parsed.discounts?.length) $('#receiptItemSummary').textContent += ` ${parsed.discounts.length} discount line(s) excluded from inventory quantities.`;
   if (scan.meijer_lookup_errors?.length) {
     $('#receiptItemSummary').textContent += ` Meijer lookup: ${scan.meijer_lookup_errors.join(' ')}`;
   }
@@ -159,7 +161,7 @@ async function showReview(scan) {
   const meta = $("#receiptMeta");
   meta.innerHTML = `
     <div><small>Date</small><strong>${escapeHtml(parsed.purchase_date || "Unknown")}</strong></div>
-    <div><small>Store</small><strong>${escapeHtml(parsed.store_number || "Unknown")}</strong></div>
+    <div><small>Store</small><strong>${escapeHtml([parsed.store || "Meijer", parsed.store_number].filter(Boolean).join(" #"))}</strong></div>
     <div><small>Terminal</small><strong>${escapeHtml(parsed.terminal || "Unknown")}</strong></div>
     <div><small>Total</small><strong>${money(parsed.total)}</strong></div>
   `;
@@ -184,7 +186,7 @@ async function showReview(scan) {
 
       </td>
     `;
-    if (status !== 'resolved') addSearchControls(tr.lastElementChild, item.meijer_search_url);
+    if (status !== 'resolved') addSearchControls(tr.lastElementChild, item.costco_search_url || item.meijer_search_url);
     if (status === 'suggested') {
       const candidates = item.candidates || [item.suggestion];
       const cell = tr.lastElementChild;
@@ -225,7 +227,7 @@ async function showReview(scan) {
       const cell = tr.lastElementChild;
       const editor = document.createElement('details');
       editor.innerHTML = `<summary>Enter Product Manually</summary><div class="match-fields" data-manual-upc="${escapeHtml(item.upc || item.raw_code)}">
-        ${productFieldsHtml(item.upc || item.raw_code)}
+        ${productFieldsHtml(item.upc || item.raw_code, item.classification === "COSTCO_ITEM_NUMBER" ? {name: item.receipt_description} : {})}
         <button type="button" data-save-product>Save Product</button></div>`;
       editor.querySelector('[data-save-product]').addEventListener('click', async () => {
         const form = editor.querySelector('[data-manual-upc]');
@@ -318,11 +320,11 @@ async function loadUnknown() {
   for (const row of rows) {
     const card = document.createElement('article');
     card.className = 'unknown-card';
-    card.innerHTML = `<div class="unknown-header"><div><strong>Unknown Product · UPC: ${escapeHtml(row.upc || row.raw_code)}</strong>
+    card.innerHTML = `<div class="unknown-header"><div><strong>Unknown Product · Code: ${escapeHtml(row.upc || row.raw_code)}</strong>
       <div>${escapeHtml(row.description || '')}</div><span class="badge unresolved">Needs Identification</span></div></div>
       <details open><summary>Enter Product Manually</summary><div class="form-grid">${productFieldsHtml(row.upc || row.raw_code, row.suggestion || {})}</div></details>
       <div class="form-actions"><button data-action="save">Save Product</button></div>`;
-    addSearchControls(card.querySelector('.unknown-header'), row.meijer_search_url);
+    addSearchControls(card.querySelector('.unknown-header'), row.costco_search_url || row.meijer_search_url);
     card.querySelector('[data-action="save"]').addEventListener('click', async () => {
       try {
         const payload = readProductFields(card);
@@ -350,7 +352,7 @@ async function lookupManualUpc(event) {
     container.innerHTML = `<span class="badge ${result.suggestion ? 'suggested' : 'unresolved'}">${result.suggestion ? 'Suggested · External Lookup' : 'Unknown · Needs Identification'}</span>
       <div class="form-grid">${productFieldsHtml(result.upc, result.suggestion || {})}</div>
       <div class="form-actions"><button type="button" data-save-product>Save Product</button></div>`;
-    addSearchControls(container, result.meijer_search_url);
+    addSearchControls(container, result.costco_search_url || result.meijer_search_url);
     container.querySelector('[data-save-product]').addEventListener('click', async () => {
       try {
         const payload = {...readProductFields(container), lookup_source: result.suggestion?.lookup_source || 'manual'};

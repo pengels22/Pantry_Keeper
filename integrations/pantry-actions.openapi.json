@@ -1,0 +1,213 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Pantry Keeper Inventory",
+    "version": "1.0.0",
+    "description": "Read the latest published inventory snapshot. Updates when the publishing script runs."
+  },
+  "servers": [
+    {
+      "url": "https://pengels22.github.io"
+    }
+  ],
+  "paths": {
+    "/Pantry_Keeper/inventory.json": {
+      "get": {
+        "operationId": "getPantryInventory",
+        "summary": "Read all pantry inventory and product details",
+        "description": "Returns the published inventory snapshot. Field names use inventory. and product. prefixes. This is read-only.",
+        "security": [],
+        "x-openai-isConsequential": false,
+        "responses": {
+          "200": {
+            "description": "Inventory snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InventoryRow"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "InventoryRow": {
+        "type": "object",
+        "properties": {
+          "inventory.id": {
+            "type": "integer"
+          },
+          "inventory.product_id": {
+            "type": "integer"
+          },
+          "inventory.quantity": {
+            "type": "number"
+          },
+          "inventory.location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inventory.last_updated": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "inventory.package_quantity": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "inventory.package_size": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "inventory.package_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inventory.usable_quantity": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "inventory.usable_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inventory.reserved_quantity": {
+            "type": "number"
+          },
+          "product.id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "product.upc": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product.notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product.receipt_code_raw": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product.gtin_normalized": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product.brand": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product.name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product.size": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product.unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product.category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product.default_location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product.lookup_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product.created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "product.updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "inventory.id",
+          "inventory.product_id",
+          "inventory.quantity",
+          "inventory.location",
+          "inventory.last_updated",
+          "inventory.package_quantity",
+          "inventory.package_size",
+          "inventory.package_unit",
+          "inventory.usable_quantity",
+          "inventory.usable_unit",
+          "inventory.reserved_quantity",
+          "product.id",
+          "product.upc",
+          "product.notes",
+          "product.receipt_code_raw",
+          "product.gtin_normalized",
+          "product.brand",
+          "product.name",
+          "product.size",
+          "product.unit",
+          "product.category",
+          "product.default_location",
+          "product.lookup_source",
+          "product.created_at",
+          "product.updated_at"
+        ]
+      }
+    }
+  }
+}

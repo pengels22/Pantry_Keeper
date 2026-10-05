@@ -23,16 +23,16 @@ from sqlalchemy.orm import Session
 from db import engine, get_db
 from models import BrowserDraft, Inventory, Product, Receipt, ReceiptItem, utc_now
 from services.inventory_service import add_to_inventory
-from services.meijer_parser import parse_meijer_receipt
+from services.receipt_parser import parse_receipt
 from services.ocr import OCRUnavailable, extract_text_from_image
 from services.pdf import extract_receipt_pdf, InvalidReceiptPDF, ReceiptPDFTooLarge
 from services.product_lookup import (
     find_local_product, find_local_products, lookup_open_food_facts,
-    lookup_unknown_product, cached_suggestion, meijer_search_url,
+    lookup_unknown_product, cached_suggestion, meijer_search_url, costco_search_url,
 )
 from services.product_catalog import product_values, save_identified_product, resolve_pending_items
 from services.schema import initialize_database
-from services.upc import normalize_upc
+from services.upc import normalize_catalog_code
 
 BASE_DIR = Path(__file__).resolve().parent
 APP_NAME = os.getenv("APP_NAME", "Pantry Keeper")
@@ -68,11 +68,18 @@ def require_extension_token(authorization: str | None):
 
 def normalized_items(parsed):
     items = []
+    if parsed.get("store", "Meijer") not in {"Meijer", "Costco"}:
+        raise HTTPException(status_code=400, detail="Unsupported receipt store.")
     for item in parsed.get("items", []):
         try:
-            upc = normalize_upc(item.get("raw_code") or item.get("upc") or item.get("normalized_code"))
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raw_code = item.get("raw_code") or item.get("upc") or item.get("normalized_code")
+            if parsed.get("store") == "Costco":
+                if not isinstance(raw_code, str):
+                    raise ValueError("Costco item number must be text.")
+                raw_code = "costco:" + raw_code.removeprefix("costco:")
+            upc = normalize_catalog_code(raw_code)
+        except (ValueError, TypeError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid receipt item code.") from exc
         try:
             quantity = float(item.get("quantity", 1.0))
         except (ValueError, TypeError):
@@ -95,6 +102,11 @@ async def resolve_items(db, items, meijer_products=None):
         if upc in known:
             resolutions[upc] = {"status": "resolved", "source": "Pantry Keeper",
                 "lookup_status": "KNOWN", "product": serialize_product(known[upc])}
+            continue
+        if upc.startswith("costco:"):
+            resolutions[upc] = {"status": "unresolved", "source": "Needs Identification",
+                "lookup_status": "RETAILER_ITEM_NUMBER", "classification": "COSTCO_ITEM_NUMBER",
+                "costco_search_url": costco_search_url(upc)}
             continue
         search = {"meijer_search_url": meijer_search_url(upc), "classification": "UNKNOWN_UPC"}
         candidates = (meijer_products or {}).get(item["upc"], []) or (meijer_products or {}).get(item.get("raw_code"), [])
@@ -393,7 +405,7 @@ async def scan_image(
     except OCRUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
-    parsed = parse_meijer_receipt(text)
+    parsed = parse_receipt(text)
     return {
         "source_type": source_type,
         "source_format": "image",
@@ -407,7 +419,7 @@ async def scan_text(payload: dict):
     text = (payload.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="No receipt text supplied.")
-    parsed = parse_meijer_receipt(text)
+    parsed = parse_receipt(text)
     return {
         "source_type": payload.get("source_type", "manual_text"),
         "source_format": "text",
@@ -429,7 +441,7 @@ async def scan_browser(
     text = text.strip()
     if len(text) > 500_000:
         raise HTTPException(status_code=413, detail="Receipt text is too large. Open an individual receipt.")
-    parsed = parse_meijer_receipt(text)
+    parsed = parse_receipt(text)
     if not parsed["items"]:
         raise HTTPException(status_code=422, detail="No receipt items recognized. Open an individual receipt or upload a screenshot.")
     scan = {
@@ -458,7 +470,7 @@ def save_browser_draft(db: Session, scan: dict):
         # Only unique UPCs missing from our catalog are eligible for Meijer.
         "lookup_items": list({item["upc"]: {**item, "raw_code": item["upc"],
             "meijer_search_url": meijer_search_url(item["upc"])}
-            for item in items if item["upc"] not in known and item["upc"]}.values()),
+            for item in items if item["upc"] not in known and item["upc"] and not item["upc"].startswith("costco:")}.values()),
     }
 
 
@@ -478,7 +490,7 @@ async def scan_browser_image(
         raise HTTPException(status_code=503, detail=str(exc))
     except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
         raise HTTPException(status_code=400, detail="Could not read this receipt image. Try a PNG or JPEG screenshot.")
-    parsed = parse_meijer_receipt(text)
+    parsed = parse_receipt(text)
     if not parsed["items"]:
         raise HTTPException(status_code=422, detail="No receipt items recognized in the image. Try a clearer receipt screenshot.")
     return save_browser_draft(db, {
@@ -505,7 +517,7 @@ async def scan_browser_pdf(
         raise HTTPException(status_code=413, detail=str(exc))
     except OCRUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
-    parsed = parse_meijer_receipt(text)
+    parsed = parse_receipt(text)
     if not parsed["items"]:
         raise HTTPException(status_code=422, detail="No receipt items recognized in this PDF. Try a clearer receipt screenshot.")
     return save_browser_draft(db, {
@@ -538,13 +550,15 @@ def attach_meijer_products(
     if not draft or draft.expires_at <= utc_now():
         raise HTTPException(status_code=410, detail="Receipt draft expired. Scan it again.")
     scan = json.loads(draft.scan_json)
-    codes = {normalize_upc(item["raw_code"]) for item in scan["parsed"]["items"]}
+    if scan["parsed"].get("store", "Meijer") != "Meijer":
+        raise HTTPException(status_code=400, detail="Meijer product matches cannot be attached to a Costco receipt.")
+    codes = {normalize_catalog_code(item["raw_code"]) for item in scan["parsed"]["items"]}
     products = payload.get("products")
     if not isinstance(products, dict):
         raise HTTPException(status_code=400, detail="Product lookup results must be a mapping.")
     cleaned = {}
     for code, candidates in products.items():
-        code = normalize_upc(code)
+        code = normalize_catalog_code(code)
         if code not in codes or not isinstance(candidates, list):
             raise HTTPException(status_code=400, detail="Product results must belong to this receipt.")
         cleaned[code] = []
@@ -586,7 +600,7 @@ async def resolve_preview(payload: dict, db: Session = Depends(get_db)):
 
 @app.get("/api/products/lookup")
 async def lookup_product(upc: str, db: Session = Depends(get_db)):
-    normalized = normalize_upc(upc)
+    normalized = normalize_catalog_code(upc)
     if not normalized or len(normalized) > 64:
         raise HTTPException(status_code=400, detail="Enter a UPC of 1–64 digits.")
     return (await resolve_items(db, [{"raw_code": upc, "upc": normalized,
@@ -620,7 +634,7 @@ def import_receipt(payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Selected products must be a mapping.")
     selected_normalized = {}
     for code, selected in selected_products.items():
-        upc = normalize_upc(code)
+        upc = normalize_catalog_code(code)
         if upc not in codes or not isinstance(selected, dict):
             raise HTTPException(status_code=400, detail="Selected products must belong to this receipt.")
         product_values(selected)
@@ -632,7 +646,7 @@ def import_receipt(payload: dict, db: Session = Depends(get_db)):
         resolve_pending_items(db, known[upc])
 
     receipt = Receipt(
-        store="Meijer",
+        store=parsed.get("store", "Meijer"),
         purchase_date=parsed.get("purchase_date"),
         store_number=parsed.get("store_number"),
         terminal=parsed.get("terminal"),
@@ -694,13 +708,14 @@ def unknown_products(db: Session = Depends(get_db)):
             "receipt_item_id": r.id,
             "raw_code": r.raw_code,
             "normalized_code": r.normalized_code,
-            "upc": normalize_upc(r.raw_code or r.normalized_code),
-            "classification": "UNKNOWN_UPC",
-            "suggestion": cached_suggestion(db, r.raw_code or r.normalized_code or ""),
+            "upc": normalize_catalog_code(r.normalized_code or r.raw_code),
+            "classification": "COSTCO_ITEM_NUMBER" if (r.normalized_code or "").startswith("costco:") else "UNKNOWN_UPC",
+            "suggestion": cached_suggestion(db, r.normalized_code or r.raw_code or ""),
             "description": r.receipt_description,
             "quantity": r.quantity,
             "line_total": r.line_total,
-            "meijer_search_url": meijer_search_url(r.raw_code or ""),
+            "meijer_search_url": None if (r.normalized_code or "").startswith("costco:") else meijer_search_url(r.raw_code or ""),
+            "costco_search_url": costco_search_url(r.normalized_code) if (r.normalized_code or "").startswith("costco:") else None,
         }
         for r in rows
     ]
@@ -715,7 +730,7 @@ def resolve_unknown(receipt_item_id: int, payload: dict, db: Session = Depends(g
     if row.status == "resolved":
         return {"ok": True, "product": serialize_product(row.product)}
 
-    code = row.raw_code or row.normalized_code or ""
+    code = row.normalized_code or row.raw_code or ""
     product = find_local_product(db, code)
     if not product:
         product = save_identified_product(db, code, payload)

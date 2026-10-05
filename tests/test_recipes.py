@@ -59,6 +59,16 @@ class RecipeTests(unittest.TestCase):
             db.commit()
         self.assertIn('No inventory items.', self.client.get('/api/inventory?format=html').text)
 
+    def test_full_inventory_json_export(self):
+        response = self.client.get('/api/inventory?format=export-json&limit=1')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 3)
+        self.assertIsInstance(data[0]['inventory.quantity'], (int, float))
+        self.assertIn('product.notes', data[0])
+        self.assertIsNone(data[0]['product.notes'])
+        self.assertIn('product.created_at', data[0])
+
     def select(self, proposal=None):
         response = self.client.post('/api/recipes/session', json={'proposal': proposal or self.proposal})
         self.assertEqual(response.status_code, 200, response.text)
